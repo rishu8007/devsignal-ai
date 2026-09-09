@@ -1,0 +1,21 @@
+{
+  "name": "devsignal-ai",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Human-approved AI personal-branding platform for developers",
+  "workspaces": [
+    "apps/*",
+    "services/api",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:web": "npm run dev --workspace=apps/web",
+    "dev:api": "npm run dev --workspace=services/api",
+    "build": "npm run build --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

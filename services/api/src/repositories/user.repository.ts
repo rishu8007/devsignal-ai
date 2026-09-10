@@ -9,6 +9,14 @@ export async function emailExists(email: string): Promise<boolean> {
   return (await UserModel.exists({ email })) !== null;
 }
 
+export async function findUserForAuthentication(email: string): Promise<CreatedUser | null> {
+  return UserModel.findOne({ email }).select("+passwordHash").exec();
+}
+
+export async function findPublicUserById(userId: string): Promise<CreatedUser | null> {
+  return UserModel.findById(userId).select("-passwordHash").exec();
+}
+
 export async function createUser(
   name: string,
   email: string,

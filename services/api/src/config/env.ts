@@ -15,6 +15,15 @@ const environmentSchema = z.object({
       (value) => value.startsWith("mongodb://") || value.startsWith("mongodb+srv://"),
       "MONGODB_URI must begin with mongodb:// or mongodb+srv://",
     ),
+  JWT_ACCESS_SECRET: z.string().min(32),
+  JWT_ACCESS_TTL_SECONDS: z.coerce.number().int().min(300).max(86400).default(3600),
+  JWT_ISSUER: z.string().min(1).default("devsignal-api"),
+  JWT_AUDIENCE: z.string().min(1).default("devsignal-web"),
+  AUTH_COOKIE_NAME: z
+    .string()
+    .min(1)
+    .regex(/^[\w!#$%&'*+\-.^`|~]+$/)
+    .default("devsignal_access_token"),
 });
 
 const parsedEnvironment = environmentSchema.safeParse(process.env);

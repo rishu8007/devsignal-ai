@@ -8,11 +8,16 @@ export const errorMiddleware: ErrorRequestHandler = (
   _next,
 ) => {
   if (error instanceof AppError) {
+    const publicError = {
+      code: error.code,
+      message: error.message,
+    };
+
     response.status(error.statusCode).json({
       success: false,
       error: {
-        code: error.code,
-        message: error.message,
+        ...publicError,
+        ...(error.details ? { details: error.details } : {}),
       },
     });
     return;

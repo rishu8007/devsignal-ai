@@ -7,6 +7,7 @@ import { errorMiddleware } from "./middleware/error.middleware.js";
 import { notFoundMiddleware } from "./middleware/not-found.middleware.js";
 import { authRouter } from "./routes/auth.routes.js";
 import { healthRouter } from "./routes/health.routes.js";
+import { signalRouter } from "./routes/signal.routes.js";
 
 export const app = express();
 
@@ -24,5 +25,6 @@ app.use(cookieParser());
 
 app.use("/api/v1", healthRouter);
 app.use("/api/v1/auth", authRouter);
+app.use("/api/v1/signals", signalRouter);
 app.use(notFoundMiddleware);
 app.use(errorMiddleware);

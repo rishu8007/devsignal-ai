@@ -17,6 +17,7 @@ class ErrorBody(BaseModel):
 
     code: str
     message: str
+    details: dict[str, dict[str, list[str]]] | None = None
 
 
 class ErrorResponse(BaseModel):

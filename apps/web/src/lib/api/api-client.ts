@@ -54,7 +54,7 @@ function getBaseUrl(): string | null {
 
 export async function request<T>(
   path: string,
-  options: RequestInit,
+  options: RequestInit & { timeoutMs?: number },
   isValidResponse: (value: unknown) => value is T,
 ): Promise<T> {
   const baseUrl = getBaseUrl();
@@ -62,10 +62,18 @@ export async function request<T>(
     throw new ApiClientError("The API is unavailable.", 0, "CLIENT_CONFIGURATION_ERROR");
   }
 
+  const controller = new AbortController();
+  const abortFromCaller = () => controller.abort();
+  options.signal?.addEventListener("abort", abortFromCaller, { once: true });
+  const timeout = options.timeoutMs
+    ? window.setTimeout(() => controller.abort(), options.timeoutMs)
+    : undefined;
+  const signal = controller.signal;
   let response: Response;
   try {
     response = await fetch(`${baseUrl}${path}`, {
       ...options,
+      signal,
       credentials: "include",
       cache: "no-store",
       headers: {
@@ -74,11 +82,21 @@ export async function request<T>(
       },
     });
   } catch {
-    if (options.signal?.aborted) {
-      throw new ApiClientError("The API request was cancelled.", 0, "REQUEST_ABORTED");
+    if (signal.aborted) {
+      if (timeout !== undefined) window.clearTimeout(timeout);
+      if (options.signal?.aborted) {
+        options.signal.removeEventListener("abort", abortFromCaller);
+        throw new ApiClientError("The API request was cancelled.", 0, "REQUEST_ABORTED");
+      }
+      options.signal?.removeEventListener("abort", abortFromCaller);
+      throw new ApiClientError("The API request timed out.", 0, "REQUEST_TIMEOUT");
     }
+    if (timeout !== undefined) window.clearTimeout(timeout);
+    options.signal?.removeEventListener("abort", abortFromCaller);
     throw new ApiClientError("The API is unavailable.", 0, "NETWORK_ERROR");
   }
+  if (timeout !== undefined) window.clearTimeout(timeout);
+  options.signal?.removeEventListener("abort", abortFromCaller);
 
   let payload: unknown;
   try {

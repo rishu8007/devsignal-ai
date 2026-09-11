@@ -8,6 +8,9 @@ interface RecentSignalsProps {
   error: string | null;
   total: number | null;
   onRetry: () => void;
+  selectedSignalId: string | null;
+  onSelectSignal: (signal: PublicSignal) => void;
+  selectionDisabled: boolean;
 }
 
 export function RecentSignals({
@@ -16,6 +19,9 @@ export function RecentSignals({
   error,
   total,
   onRetry,
+  selectedSignalId,
+  onSelectSignal,
+  selectionDisabled,
 }: RecentSignalsProps) {
   return (
     <section aria-labelledby="recent-signals-heading" className="mt-6">
@@ -54,7 +60,7 @@ export function RecentSignals({
       {!loading && !error && signals.length > 0 && (
         <ul className="mt-4 grid gap-4">
           {signals.map((signal) => (
-            <li key={signal.id} className="min-w-0 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+            <li key={signal.id} className={`min-w-0 rounded-xl border bg-white p-5 shadow-sm ${selectedSignalId === signal.id ? "border-indigo-500 ring-2 ring-indigo-100" : "border-slate-200"}`}>
               <div className="flex flex-wrap items-center gap-2 text-xs font-medium text-slate-500">
                 <span className="rounded-full bg-indigo-50 px-2.5 py-1 text-indigo-700">{signal.primaryAudience}</span>
                 <span className="rounded-full bg-teal-50 px-2.5 py-1 text-teal-700">{signal.contentType}</span>
@@ -62,6 +68,14 @@ export function RecentSignals({
               </div>
               <h3 className="mt-3 break-words text-lg font-semibold text-slate-900">{signal.topic}</h3>
               <p className="mt-2 break-words text-sm leading-6 text-slate-600">{signal.notes}</p>
+              <button
+                type="button"
+                onClick={() => onSelectSignal(signal)}
+                disabled={selectionDisabled}
+                className="mt-4 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {selectedSignalId === signal.id ? "Selected" : "View drafts"}
+              </button>
             </li>
           ))}
         </ul>

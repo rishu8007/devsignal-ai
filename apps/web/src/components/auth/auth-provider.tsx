@@ -17,6 +17,7 @@ interface AuthContextValue {
   user: PublicUser | null;
   errorMessage: string | null;
   retry: () => Promise<void>;
+  invalidateSession: () => void;
   login: (email: string, password: string) => Promise<PublicUser>;
   logout: () => Promise<void>;
 }
@@ -67,9 +68,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const invalidateSession = useCallback(() => {
+    setUser(null);
+    setStatus("unauthenticated");
+    setErrorMessage(null);
+  }, []);
+
   const value = useMemo(
-    () => ({ status, user, errorMessage, retry: restoreSession, login, logout }),
-    [status, user, errorMessage, restoreSession, login, logout],
+    () => ({
+      status,
+      user,
+      errorMessage,
+      retry: restoreSession,
+      invalidateSession,
+      login,
+      logout,
+    }),
+    [status, user, errorMessage, restoreSession, invalidateSession, login, logout],
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

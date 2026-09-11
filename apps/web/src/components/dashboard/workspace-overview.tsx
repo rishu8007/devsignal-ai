@@ -1,12 +1,11 @@
 import { CalendarDays, CheckCircle2, FileText } from "lucide-react";
 
-const statistics = [
-  { label: "Drafts", value: "0", icon: FileText, tone: "text-indigo-600 bg-indigo-50" },
-  { label: "Approved", value: "0", icon: CheckCircle2, tone: "text-teal-600 bg-teal-50" },
-  { label: "Scheduled", value: "0", icon: CalendarDays, tone: "text-amber-600 bg-amber-50" },
-];
-
-export function WorkspaceOverview() {
+export function WorkspaceOverview({ total }: { total: number | null }) {
+  const statistics = [
+    { label: "Signals", value: total === null ? "—" : String(total), icon: FileText, tone: "text-indigo-600 bg-indigo-50" },
+    { label: "Approved", value: "0", icon: CheckCircle2, tone: "text-teal-600 bg-teal-50" },
+    { label: "Scheduled", value: "0", icon: CalendarDays, tone: "text-amber-600 bg-amber-50" },
+  ];
   return (
     <section
       aria-labelledby="workspace-heading"

@@ -24,6 +24,15 @@ const environmentSchema = z.object({
     .min(1)
     .regex(/^[\w!#$%&'*+\-.^`|~]+$/)
     .default("devsignal_access_token"),
+  AI_SERVICE_URL: z
+    .string()
+    .url()
+    .refine((value) => ["http:", "https:"].includes(new URL(value).protocol), {
+      message: "AI_SERVICE_URL must use HTTP or HTTPS",
+    })
+    .default("http://127.0.0.1:8000"),
+  AI_INTERNAL_API_KEY: z.string().min(32).optional(),
+  AI_SERVICE_TIMEOUT_MS: z.coerce.number().int().min(1000).max(300000).default(150000),
 });
 
 const parsedEnvironment = environmentSchema.safeParse(process.env);

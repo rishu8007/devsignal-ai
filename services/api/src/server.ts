@@ -2,6 +2,7 @@ import type { Server } from "node:http";
 import { app } from "./app.js";
 import { connectToDatabase, disconnectFromDatabase } from "./config/database.js";
 import { env } from "./config/env.js";
+import { ensureGenerationIndexes } from "./repositories/generation.repository.js";
 
 let server: Server | undefined;
 let isShuttingDown = false;
@@ -44,6 +45,7 @@ async function shutdown(signal: string): Promise<void> {
 async function startServer(): Promise<void> {
   try {
     await connectToDatabase();
+    await ensureGenerationIndexes();
   } catch {
     console.error("Database connection failed; the API server was not started.");
     process.exitCode = 1;

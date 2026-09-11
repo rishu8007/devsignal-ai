@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { createSignal, listSignals } from "../controllers/signal.controller.js";
+import { generationRouter } from "./generation.routes.js";
 import { authenticationMiddleware } from "../middleware/authentication.middleware.js";
 import { validateQuery, validateRequest } from "../middleware/validate-request.middleware.js";
 import {
@@ -9,6 +10,8 @@ import {
 } from "../validation/signal.validation.js";
 
 export const signalRouter = Router();
+
+signalRouter.use("/:signalId/generations", generationRouter);
 
 signalRouter.post(
   "/",

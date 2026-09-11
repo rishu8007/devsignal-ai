@@ -66,3 +66,28 @@ export function validateQuery<T>(
     next();
   };
 }
+
+export function validateParams<T>(
+  schema: ZodType<T>,
+  assign: (locals: Express.Locals, data: T) => void,
+): RequestHandler {
+  return (request, response, next) => {
+    const result = schema.safeParse(request.params);
+
+    if (!result.success) {
+      next(
+        new AppError(
+          400,
+          "VALIDATION_ERROR",
+          "Invalid request data",
+          true,
+          getValidationDetails(result.error),
+        ),
+      );
+      return;
+    }
+
+    assign(response.locals, result.data);
+    next();
+  };
+}

@@ -10,6 +10,7 @@ declare global {
 
     interface Locals {
       signalQuery: ListSignalsQuery;
+      signalId: string;
     }
   }
 }

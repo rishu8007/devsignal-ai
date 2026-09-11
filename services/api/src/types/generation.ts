@@ -32,7 +32,7 @@ export interface PublicGenerationVariation {
   id: string;
   angle: GenerationAngle;
   content: string;
-  status: "draft";
+  status: "draft" | "approved";
 }
 
 export interface PublicGenerationDto {

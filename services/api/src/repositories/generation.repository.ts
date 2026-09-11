@@ -33,3 +33,30 @@ export function createGeneration(
     })),
   });
 }
+
+export function updateGenerationVariation(
+  ownerId: string,
+  signalId: string,
+  variationId: string,
+  update: { content?: string; status: "draft" | "approved" },
+): Promise<GenerationDocument | null> {
+  const fields: Record<string, string | Date> = {
+    "variations.$.status": update.status,
+    updatedAt: new Date(),
+  };
+  if (update.content !== undefined) {
+    fields["variations.$.content"] = update.content;
+  }
+
+  return GenerationModel.findOneAndUpdate(
+    {
+      ownerId,
+      signalId,
+      "variations._id": variationId,
+    },
+    { $set: fields },
+    { new: true, runValidators: true },
+  )
+    .lean<GenerationDocument>()
+    .exec();
+}

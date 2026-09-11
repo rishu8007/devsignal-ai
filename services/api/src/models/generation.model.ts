@@ -18,9 +18,8 @@ const generationVariationSchema = new Schema(
     status: {
       type: String,
       required: true,
-      enum: ["draft"],
+      enum: ["draft", "approved"],
       default: "draft",
-      immutable: true,
     },
   },
   { _id: true, versionKey: false },

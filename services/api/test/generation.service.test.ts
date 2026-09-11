@@ -5,7 +5,9 @@ import type { AiGenerationClient } from "../src/clients/ai-service.client.js";
 import type { SignalDocument } from "../src/models/signal.model.js";
 import type { GenerationDocument } from "../src/models/generation.model.js";
 import {
+  approveGenerationVariationForSignal,
   createGenerationForSignal,
+  editGenerationVariationForSignal,
   type GenerationRepositoryBoundary,
 } from "../src/services/generation.service.js";
 import type {
@@ -110,6 +112,7 @@ function setup(
       }
       return makeGeneration();
     },
+    updateGenerationVariation: async () => options.existing ?? makeGeneration(),
   };
   const client: AiGenerationClient = {
     generate: async () => {
@@ -262,4 +265,163 @@ test("duplicate-key races retrieve the existing owned Generation", async () => {
 
   assert.equal(response.created, false);
   assert.equal(response.generation.id, persisted._id.toString());
+});
+
+function setupVariationUpdates(
+  initial: GenerationDocument | null = makeGeneration(),
+): {
+  repository: GenerationRepositoryBoundary;
+  generation: GenerationDocument | null;
+  updates: Array<{
+    ownerId: string;
+    signalId: string;
+    variationId: string;
+    update: { content?: string; status: "draft" | "approved" };
+  }>;
+} {
+  const updates: Array<{
+    ownerId: string;
+    signalId: string;
+    variationId: string;
+    update: { content?: string; status: "draft" | "approved" };
+  }> = [];
+  const generation = initial;
+  const base = setup({ existing: generation });
+  return {
+    generation,
+    updates,
+    repository: {
+      ...base.repository,
+      updateGenerationVariation: async (currentOwnerId, currentSignalId, variationId, update) => {
+        updates.push({
+          ownerId: currentOwnerId,
+          signalId: currentSignalId,
+          variationId,
+          update,
+        });
+        if (!generation) return null;
+        const variation = generation.variations.find(
+          (currentVariation) => currentVariation._id.toString() === variationId,
+        );
+        if (!variation) return null;
+        if (update.content !== undefined) variation.content = update.content;
+        variation.status = update.status;
+        return generation;
+      },
+    },
+  };
+}
+
+test("editing updates only the targeted variation and preserves its identity and angle", async () => {
+  const { repository, generation, updates } = setupVariationUpdates();
+  assert.ok(generation);
+  const target = generation.variations[1];
+  const sibling = { ...generation.variations[0] };
+
+  const response = await editGenerationVariationForSignal(
+    ownerId,
+    signalId,
+    target._id.toString(),
+    `  ${"edited content ".repeat(10)}  `,
+    repository,
+  );
+
+  assert.equal(updates.length, 1);
+  assert.deepEqual(updates[0], {
+    ownerId,
+    signalId,
+    variationId: target._id.toString(),
+    update: { content: "edited content ".repeat(10).trim(), status: "draft" },
+  });
+  assert.equal(response.variations[1].id, target._id.toString());
+  assert.equal(response.variations[1].angle, "learning_story");
+  assert.equal(response.variations[1].status, "draft");
+  assert.equal(response.variations[0].content, sibling.content);
+  assert.equal(response.variations[0].status, sibling.status);
+});
+
+test("editing approved content resets only that variation to draft", async () => {
+  const generation = makeGeneration();
+  generation.variations[1].status = "approved";
+  const { repository } = setupVariationUpdates(generation);
+
+  const response = await editGenerationVariationForSignal(
+    ownerId,
+    signalId,
+    generation.variations[1]._id.toString(),
+    "revised content ".repeat(10),
+    repository,
+  );
+
+  assert.equal(response.variations[1].status, "draft");
+  assert.equal(response.variations[0].status, "draft");
+  assert.equal(response.variations[2].status, "draft");
+});
+
+test("approval changes only the targeted variation and is idempotent", async () => {
+  const { repository, generation, updates } = setupVariationUpdates();
+  assert.ok(generation);
+  const variationId = generation.variations[2]._id.toString();
+
+  const first = await approveGenerationVariationForSignal(
+    ownerId,
+    signalId,
+    variationId,
+    repository,
+  );
+  const second = await approveGenerationVariationForSignal(
+    ownerId,
+    signalId,
+    variationId,
+    repository,
+  );
+
+  assert.equal(first.variations[2].status, "approved");
+  assert.equal(second.variations[2].status, "approved");
+  assert.deepEqual(
+    second.variations.map((variation) => variation.status),
+    ["draft", "draft", "approved"],
+  );
+  assert.deepEqual(
+    updates.map((update) => update.update),
+    [{ status: "approved" }, { status: "approved" }],
+  );
+});
+
+test("editing and approval reject missing owned resources without an AI operation", async () => {
+  const missingSignal = setupVariationUpdates();
+  missingSignal.repository.findSignalByIdAndOwner = async () => null;
+  await assert.rejects(
+    editGenerationVariationForSignal(
+      ownerId,
+      signalId,
+      "507f1f77bcf86cd799439015",
+      "valid content ".repeat(10),
+      missingSignal.repository,
+    ),
+    { code: "SIGNAL_NOT_FOUND" },
+  );
+  assert.equal(missingSignal.updates.length, 0);
+
+  const missingGeneration = setupVariationUpdates(null);
+  await assert.rejects(
+    approveGenerationVariationForSignal(
+      ownerId,
+      signalId,
+      "507f1f77bcf86cd799439015",
+      missingGeneration.repository,
+    ),
+    { code: "GENERATION_NOT_FOUND" },
+  );
+
+  const missingVariation = setupVariationUpdates();
+  await assert.rejects(
+    approveGenerationVariationForSignal(
+      ownerId,
+      signalId,
+      "507f1f77bcf86cd799439099",
+      missingVariation.repository,
+    ),
+    { code: "VARIATION_NOT_FOUND" },
+  );
 });

@@ -5,6 +5,7 @@ import type { GenerationDocument } from "../models/generation.model.js";
 import {
   createGeneration,
   findGenerationByOwnerAndSignal,
+  updateGenerationVariation,
 } from "../repositories/generation.repository.js";
 import { findSignalByIdAndOwner } from "../repositories/signal.repository.js";
 import { GENERATION_ANGLES } from "../types/generation.js";
@@ -21,12 +22,14 @@ export interface GenerationRepositoryBoundary {
   findGenerationByOwnerAndSignal: typeof findGenerationByOwnerAndSignal;
   createGeneration: typeof createGeneration;
   findSignalByIdAndOwner: typeof findSignalByIdAndOwner;
+  updateGenerationVariation: typeof updateGenerationVariation;
 }
 
 const defaultRepository: GenerationRepositoryBoundary = {
   findGenerationByOwnerAndSignal,
   createGeneration,
   findSignalByIdAndOwner,
+  updateGenerationVariation,
 };
 
 export interface GenerationOperationResult {
@@ -74,6 +77,39 @@ export async function getGenerationForSignal(
     throw new AppError(404, "GENERATION_NOT_FOUND", "No generation exists for this signal");
   }
   return toPublicGenerationDto(generation);
+}
+
+export async function editGenerationVariationForSignal(
+  ownerId: string,
+  signalId: string,
+  variationId: string,
+  content: string,
+  repository: GenerationRepositoryBoundary = defaultRepository,
+): Promise<PublicGenerationDto> {
+  await findSignalByOwner(ownerId, signalId, repository);
+  const generation = await repository.updateGenerationVariation(
+    ownerId,
+    signalId,
+    variationId,
+    { content: content.trim(), status: "draft" },
+  );
+  return requireUpdatedVariation(generation, repository, ownerId, signalId);
+}
+
+export async function approveGenerationVariationForSignal(
+  ownerId: string,
+  signalId: string,
+  variationId: string,
+  repository: GenerationRepositoryBoundary = defaultRepository,
+): Promise<PublicGenerationDto> {
+  await findSignalByOwner(ownerId, signalId, repository);
+  const generation = await repository.updateGenerationVariation(
+    ownerId,
+    signalId,
+    variationId,
+    { status: "approved" },
+  );
+  return requireUpdatedVariation(generation, repository, ownerId, signalId);
 }
 
 async function findSignalByOwner(
@@ -129,6 +165,22 @@ function isDuplicateKeyError(error: unknown): boolean {
   );
 }
 
+async function requireUpdatedVariation(
+  generation: GenerationDocument | null,
+  repository: GenerationRepositoryBoundary,
+  ownerId: string,
+  signalId: string,
+): Promise<PublicGenerationDto> {
+  if (!generation) {
+    const existing = await repository.findGenerationByOwnerAndSignal(ownerId, signalId);
+    if (!existing) {
+      throw new AppError(404, "GENERATION_NOT_FOUND", "No generation exists for this signal");
+    }
+    throw new AppError(404, "VARIATION_NOT_FOUND", "Generation variation not found");
+  }
+  return toPublicGenerationDto(generation);
+}
+
 function normalizeAiGenerationResult(result: AiGenerationResult): AiGenerationResult {
   const model = result.model.trim();
   if (!model || result.variations.length !== GENERATION_ANGLES.length) {
@@ -176,7 +228,7 @@ function toPublicGenerationDto(generation: GenerationDocument): PublicGeneration
       id: variation._id.toString(),
       angle: variation.angle,
       content: variation.content,
-      status: "draft",
+      status: variation.status,
     })),
     createdAt: generation.createdAt,
     updatedAt: generation.updatedAt,

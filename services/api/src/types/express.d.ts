@@ -1,4 +1,5 @@
 import type { ListSignalsQuery } from "../validation/signal.validation.js";
+import type { ListDraftsQuery } from "../validation/draft.validation.js";
 
 declare global {
   namespace Express {
@@ -12,6 +13,7 @@ declare global {
       signalQuery: ListSignalsQuery;
       signalId: string;
       variationId: string;
+      draftQuery: ListDraftsQuery;
     }
   }
 }

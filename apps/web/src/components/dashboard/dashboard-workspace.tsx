@@ -24,6 +24,7 @@ import { WorkspaceOverview } from "@/components/dashboard/workspace-overview";
 import { DraftsView } from "@/components/dashboard/drafts-view";
 import { listCalendar, type CalendarResponse, type PublicCalendarItem } from "@/lib/api/calendar-client";
 import { CalendarView } from "@/components/dashboard/calendar-view";
+import { KnowledgeSourcesView } from "@/components/dashboard/knowledge-sources-view";
 
 export function DashboardWorkspace() {
   const { invalidateSession, status: authStatus } = useAuth();
@@ -54,6 +55,8 @@ export function DashboardWorkspace() {
   const [calendarData, setCalendarData] = useState<CalendarResponse | null>(null);
   const [calendarLoading, setCalendarLoading] = useState(false);
   const [calendarError, setCalendarError] = useState<string | null>(null);
+  const [knowledgeDirty, setKnowledgeDirty] = useState(false);
+  const [knowledgeMutationPending, setKnowledgeMutationPending] = useState(false);
   const requestId = useRef(0);
   const listController = useRef<AbortController | null>(null);
   const generationRequestId = useRef(0);
@@ -558,6 +561,18 @@ export function DashboardWorkspace() {
     }
   }, [invalidateSession, loadSignals, total]);
 
+  const handleWorkspaceTabChange = useCallback((tab: WorkspaceTab) => {
+    if (
+      activeTab === "knowledge" &&
+      tab !== "knowledge" &&
+      knowledgeDirty &&
+      !window.confirm("You have unsaved knowledge-source input. Leave this tab? Your input will be preserved.")
+    ) {
+      return;
+    }
+    setActiveTab(tab);
+  }, [activeTab, knowledgeDirty]);
+
   return (
     <>
       <WorkspaceOverview
@@ -567,8 +582,8 @@ export function DashboardWorkspace() {
       />
       <WorkspaceNavigation
         activeTab={activeTab}
-        onChange={setActiveTab}
-        disabled={mutationPending || editingVariationId !== null}
+        onChange={handleWorkspaceTabChange}
+        disabled={mutationPending || editingVariationId !== null || knowledgeMutationPending}
       />
       {activeTab === "create" && (
         <>
@@ -663,6 +678,13 @@ export function DashboardWorkspace() {
           onOpen={(item) => void findSignalAndOpenDraft(item)}
         />
       )}
+      <KnowledgeSourcesView
+        active={activeTab === "knowledge"}
+        authenticated={authStatus === "authenticated"}
+        onAuthenticationExpired={invalidateSession}
+        onDirtyChange={setKnowledgeDirty}
+        onMutationPendingChange={setKnowledgeMutationPending}
+      />
     </>
   );
 }

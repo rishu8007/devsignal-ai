@@ -1,6 +1,6 @@
-import { CalendarDays, FileText, PencilLine } from "lucide-react";
+import { BookOpen, CalendarDays, FileText, PencilLine } from "lucide-react";
 
-export type WorkspaceTab = "create" | "drafts" | "calendar";
+export type WorkspaceTab = "create" | "drafts" | "calendar" | "knowledge";
 
 export function WorkspaceNavigation({
   activeTab,
@@ -15,10 +15,11 @@ export function WorkspaceNavigation({
     { label: "Create", icon: PencilLine, tab: "create" as const },
     { label: "Drafts", icon: FileText, tab: "drafts" as const },
     { label: "Calendar", icon: CalendarDays, tab: "calendar" as const },
+    { label: "Knowledge", icon: BookOpen, tab: "knowledge" as const },
   ];
   return (
     <nav aria-label="Workspace sections" className="mt-10 border-b border-slate-200">
-      <ul className="grid grid-cols-3">
+      <ul className="grid grid-cols-2 sm:grid-cols-4">
         {navigationItems.map(({ tab, icon: Icon, label }) => (
           <li key={label}>
             <button

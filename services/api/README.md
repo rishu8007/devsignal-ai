@@ -28,3 +28,16 @@ Generation and scheduling are authenticated and owner-scoped. Editing an
 approved variation resets it to `draft` and clears its planned date.
 Scheduling is only a manual plan: the API does not publish or run background
 jobs. The Scheduled summary includes past planned dates until removed.
+
+Knowledge-source indexing is explicit: `POST /api/v1/sources/:sourceId/index`
+requires cookie authentication and an empty request body. The API reads the
+owner and source content from MongoDB, claims a bounded indexing lease, and
+calls the internal FastAPI endpoint without application retries. Active leases
+return `SOURCE_INDEXING_IN_PROGRESS`; expired leases can be retried explicitly.
+The lease does not fence an already-running provider or Qdrant operation, so
+it is not an exactly-once guarantee. Private attempt, lease, and provider
+metadata are never included in public source DTOs.
+
+Deletion is rejected while an active indexing lease exists. Retrieval and
+vector cleanup are intentionally deferred: callers must revalidate MongoDB
+source ownership and content version before using indexed chunks.

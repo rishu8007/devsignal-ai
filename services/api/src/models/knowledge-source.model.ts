@@ -40,6 +40,41 @@ const knowledgeSourceSchema = new Schema(
       select: false,
       maxlength: 200,
     },
+    indexingAttemptId: {
+      type: String,
+      default: null,
+      select: false,
+    },
+    indexingLeaseExpiresAt: {
+      type: Date,
+      default: null,
+      select: false,
+    },
+    indexedContentVersion: {
+      type: Number,
+      default: null,
+      select: false,
+    },
+    indexedChunkerVersion: {
+      type: String,
+      default: null,
+      select: false,
+    },
+    indexedEmbeddingModel: {
+      type: String,
+      default: null,
+      select: false,
+    },
+    indexedDimensions: {
+      type: Number,
+      default: null,
+      select: false,
+    },
+    indexedChunkCount: {
+      type: Number,
+      default: null,
+      select: false,
+    },
   },
   {
     timestamps: true,
@@ -62,6 +97,13 @@ export type KnowledgeSourceDocument = InferSchemaType<typeof knowledgeSourceSche
   contentVersion: number;
   processingStatus: KnowledgeSourceProcessingStatus;
   processingErrorCode?: string | null;
+  indexingAttemptId?: string | null;
+  indexingLeaseExpiresAt?: Date | null;
+  indexedContentVersion?: number | null;
+  indexedChunkerVersion?: string | null;
+  indexedEmbeddingModel?: string | null;
+  indexedDimensions?: number | null;
+  indexedChunkCount?: number | null;
   createdAt: Date;
   updatedAt: Date;
 };

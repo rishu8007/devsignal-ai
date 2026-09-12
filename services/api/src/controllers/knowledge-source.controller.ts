@@ -6,6 +6,7 @@ import {
   getKnowledgeSourceForUser,
   listKnowledgeSourcesForUser,
 } from "../services/knowledge-source.service.js";
+import { indexKnowledgeSourceForUser } from "../services/knowledge-source-indexing.service.js";
 import type {
   CreateKnowledgeSourceInput,
   KnowledgeSourceParams,
@@ -56,4 +57,13 @@ export async function deleteKnowledgeSource(
     success: true,
     data: { message: "Knowledge source deleted" },
   });
+}
+
+export async function indexKnowledgeSource(
+  request: Request,
+  response: Response,
+): Promise<void> {
+  const params = response.locals.knowledgeSourceParams as KnowledgeSourceParams;
+  const source = await indexKnowledgeSourceForUser(requireOwnerId(request), params.sourceId);
+  response.status(200).json({ success: true, data: { source } });
 }

@@ -16,6 +16,7 @@ from app.errors import ApplicationError
 from app.providers.embedding_provider import EmbeddingsAPI, OpenAIEmbeddingProvider
 from app.providers.openai_provider import OpenAIProvider, ResponsesAPI
 from app.repositories.qdrant_repository import QdrantAPI, QdrantVectorRepository
+from app.services.source_indexing import EmbeddingConfiguration, SourceIndexingService
 
 logger = logging.getLogger("devsignal-ai-service")
 
@@ -48,6 +49,14 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
         settings.qdrant_collection_name,
         settings.openai_embedding_dimensions,
         settings.qdrant_timeout_seconds,
+    )
+    application.state.indexing_service = SourceIndexingService(
+        application.state.embedding_provider,
+        application.state.qdrant_repository,
+        EmbeddingConfiguration(
+            model=settings.openai_embedding_model,
+            dimensions=settings.openai_embedding_dimensions,
+        ),
     )
     logger.info("DevSignal AI service started")
     try:

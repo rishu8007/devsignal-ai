@@ -1,9 +1,11 @@
 import { Router } from "express";
+import { z } from "zod";
 import {
   createKnowledgeSource,
   deleteKnowledgeSource,
   getKnowledgeSource,
   listKnowledgeSources,
+  indexKnowledgeSource,
 } from "../controllers/knowledge-source.controller.js";
 import { authenticationMiddleware } from "../middleware/authentication.middleware.js";
 import {
@@ -38,4 +40,5 @@ knowledgeSourceRouter.get(
   listKnowledgeSources,
 );
 knowledgeSourceRouter.get("/:sourceId", validateSourceParams, getKnowledgeSource);
+knowledgeSourceRouter.post("/:sourceId/index", validateSourceParams, validateRequest(z.object({}).strict()), indexKnowledgeSource);
 knowledgeSourceRouter.delete("/:sourceId", validateSourceParams, deleteKnowledgeSource);

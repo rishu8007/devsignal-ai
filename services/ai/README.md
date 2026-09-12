@@ -115,6 +115,27 @@ leave partial writes. Callers must perform MongoDB source existence and
 content-version checks before exposing or using retrieved chunks, including
 after a partial or obsolete indexing attempt.
 
+## Internal indexing endpoint
+
+`POST /api/v1/indexings` is protected by `X-Internal-API-Key` and accepts only
+the API-owned `ownerId`, `sourceId`, `contentVersion`, and `content` fields.
+It returns indexing metadata only; vectors and source text never cross this
+boundary. The Express API is responsible for MongoDB ownership, version, and
+status checks before and after calling this endpoint.
+
+The API uses a lease bounded by the AI client timeout plus a safety buffer.
+Leases protect MongoDB state but do not fence an already-running Qdrant write
+or guarantee exactly-once provider costs. There are no automatic application
+retries. A timeout or uncertain outcome is recorded as a safe failure category,
+and callers must decide when an explicit retry is appropriate.
+
+Indexing writes are not transactional. A partial upsert must not be used until
+MongoDB source existence and content-version validation is performed during
+retrieval. Vector cleanup and stale-source invalidation remain future work.
+Changing the embedding model or chunker requires a separate collection or a
+controlled rebuild; model/chunker migrations are not inferred from dimensions
+alone.
+
 Embedding model identity is stored with each record. Changing models is not
 automatically compatible merely because dimensions match; use a separate
 collection or a controlled rebuild. Retry behavior is also not transactional

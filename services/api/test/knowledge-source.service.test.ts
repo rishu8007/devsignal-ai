@@ -96,6 +96,10 @@ test("knowledge source creation defaults to version one and pending", async () =
     countKnowledgeSourcesByOwner: async () => 0,
     findKnowledgeSourceByIdAndOwner: async () => null,
     deleteKnowledgeSourceByIdAndOwner: async () => null,
+    deleteKnowledgeSourceByIdAndOwnerIfNotIndexing: async () => null,
+    findKnowledgeSourceForIndexing: async () => null,
+    claimKnowledgeSourceIndexing: async () => null,
+    finalizeKnowledgeSourceIndexing: async () => null,
   };
 
   const result = await createKnowledgeSourceForUser(
@@ -131,6 +135,10 @@ test("knowledge source listing is owner-scoped and uses empty totalPages", async
     },
     findKnowledgeSourceByIdAndOwner: async () => null,
     deleteKnowledgeSourceByIdAndOwner: async () => null,
+    deleteKnowledgeSourceByIdAndOwnerIfNotIndexing: async () => null,
+    findKnowledgeSourceForIndexing: async () => null,
+    claimKnowledgeSourceIndexing: async () => null,
+    finalizeKnowledgeSourceIndexing: async () => null,
   };
 
   const result = await listKnowledgeSourcesForUser(
@@ -152,6 +160,10 @@ test("knowledge source get and delete hide cross-owner resources", async () => {
     countKnowledgeSourcesByOwner: async () => 0,
     findKnowledgeSourceByIdAndOwner: async () => null,
     deleteKnowledgeSourceByIdAndOwner: async () => null,
+    deleteKnowledgeSourceByIdAndOwnerIfNotIndexing: async () => null,
+    findKnowledgeSourceForIndexing: async () => null,
+    claimKnowledgeSourceIndexing: async () => null,
+    finalizeKnowledgeSourceIndexing: async () => null,
   };
 
   await assert.rejects(
@@ -183,8 +195,15 @@ test("knowledge source deletion passes both owner and source ID atomically", asy
       calls.push(args);
       return source();
     },
+    deleteKnowledgeSourceByIdAndOwnerIfNotIndexing: async (...args: unknown[]) => {
+      calls.push(["lease-aware", ...args]);
+      return source();
+    },
+    findKnowledgeSourceForIndexing: async () => null,
+    claimKnowledgeSourceIndexing: async () => null,
+    finalizeKnowledgeSourceIndexing: async () => null,
   };
 
   await deleteKnowledgeSourceForUser(ownerId, sourceId.toString(), repository);
-  assert.deepEqual(calls, [[ownerId, sourceId.toString()]]);
+  assert.deepEqual(calls, [["lease-aware", ownerId, sourceId.toString()]]);
 });

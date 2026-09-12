@@ -4,6 +4,10 @@ import {
   countKnowledgeSourcesByOwner,
   createKnowledgeSource,
   deleteKnowledgeSourceByIdAndOwner,
+  deleteKnowledgeSourceByIdAndOwnerIfNotIndexing,
+  finalizeKnowledgeSourceIndexing,
+  findKnowledgeSourceForIndexing,
+  claimKnowledgeSourceIndexing,
   findKnowledgeSourceByIdAndOwner,
   findKnowledgeSourcesByOwner,
 } from "../repositories/knowledge-source.repository.js";
@@ -39,6 +43,10 @@ export interface KnowledgeSourceRepositoryBoundary {
   countKnowledgeSourcesByOwner: typeof countKnowledgeSourcesByOwner;
   findKnowledgeSourceByIdAndOwner: typeof findKnowledgeSourceByIdAndOwner;
   deleteKnowledgeSourceByIdAndOwner: typeof deleteKnowledgeSourceByIdAndOwner;
+  deleteKnowledgeSourceByIdAndOwnerIfNotIndexing: typeof deleteKnowledgeSourceByIdAndOwnerIfNotIndexing;
+  findKnowledgeSourceForIndexing: typeof findKnowledgeSourceForIndexing;
+  claimKnowledgeSourceIndexing: typeof claimKnowledgeSourceIndexing;
+  finalizeKnowledgeSourceIndexing: typeof finalizeKnowledgeSourceIndexing;
 }
 
 const defaultRepository: KnowledgeSourceRepositoryBoundary = {
@@ -47,6 +55,10 @@ const defaultRepository: KnowledgeSourceRepositoryBoundary = {
   countKnowledgeSourcesByOwner,
   findKnowledgeSourceByIdAndOwner,
   deleteKnowledgeSourceByIdAndOwner,
+  deleteKnowledgeSourceByIdAndOwnerIfNotIndexing,
+  findKnowledgeSourceForIndexing,
+  claimKnowledgeSourceIndexing,
+  finalizeKnowledgeSourceIndexing,
 };
 
 function assertValidOwnerId(ownerId: string): void {
@@ -124,8 +136,12 @@ export async function deleteKnowledgeSourceForUser(
   repository: KnowledgeSourceRepositoryBoundary = defaultRepository,
 ): Promise<void> {
   assertValidOwnerId(ownerId);
-  const source = await repository.deleteKnowledgeSourceByIdAndOwner(ownerId, sourceId);
+  const source = await repository.deleteKnowledgeSourceByIdAndOwnerIfNotIndexing(ownerId, sourceId);
   if (!source) {
+    const current = await repository.findKnowledgeSourceForIndexing(ownerId, sourceId);
+    if ((current?.indexingLeaseExpiresAt ?? new Date(0)) > new Date()) {
+      throw new AppError(409, "SOURCE_INDEXING_IN_PROGRESS", "Knowledge source indexing is in progress");
+    }
     throw sourceNotFound();
   }
 }

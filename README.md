@@ -171,5 +171,6 @@ workflow result is distinct from these local checks.
 
 See [services/api/README.md](services/api/README.md) and
 [services/ai/README.md](services/ai/README.md) for service-specific details,
-and follow the [MVP demo guide](docs/demo-guide.md) for a short end-to-end
-walkthrough.
+follow the [MVP demo guide](docs/demo-guide.md) for a short end-to-end
+walkthrough, and consult the [Personal RAG plan](docs/personal-rag-plan.md)
+for upcoming knowledge-grounded generation architecture.

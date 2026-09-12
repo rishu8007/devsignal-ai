@@ -62,13 +62,44 @@ Replace placeholders in the private environment files before starting
 services. Never commit them.
 
 The root `.env` is used by Docker Compose. Set
-`MONGO_ROOT_USERNAME`, `MONGO_ROOT_PASSWORD`, and optionally `MONGO_PORT`,
-then start MongoDB:
+`MONGO_ROOT_USERNAME`, `MONGO_ROOT_PASSWORD`, and optionally `MONGO_PORT` or
+`QDRANT_PORT`, then start the local databases:
 
 ```powershell
 docker compose up -d mongo
+docker compose up -d qdrant
 docker compose ps
 ```
+
+Qdrant is available at `http://127.0.0.1:6333` by default and persists data
+in the named `devsignal_qdrant_data` volume. Its Compose service has no
+curl/wget-based healthcheck; verify it from the AI virtual environment with
+the Qdrant client:
+
+```powershell
+Push-Location services\ai
+try {
+  @'
+import asyncio
+from qdrant_client import AsyncQdrantClient
+
+async def check():
+    client = AsyncQdrantClient(url="http://127.0.0.1:6333")
+    print(await client.get_collections())
+    await client.close()
+
+asyncio.run(check())
+'@ | & .venv\Scripts\python.exe -
+} finally {
+  Pop-Location
+}
+```
+
+If `QDRANT_PORT` is changed from `6333`, set `QDRANT_URL` in
+`services\ai\.env` to the same localhost port.
+
+The vector collection is not created during service startup. Collection
+initialization will be part of the later indexing workflow.
 
 The API's `MONGODB_URI` must use the same username and password as the root
 Compose variables. The tracked API example demonstrates the local shape:
@@ -112,8 +143,9 @@ Create files only from the tracked examples. The required values are:
   `AUTH_COOKIE_NAME`, `AI_SERVICE_URL`, matching `AI_INTERNAL_API_KEY`, and
   `AI_SERVICE_TIMEOUT_MS`.
 - `services/ai/.env`: `APP_ENV`, `HOST`, `PORT`, `OPENAI_API_KEY`,
-  `OPENAI_MODEL`, matching `INTERNAL_API_KEY` (at least 32 characters), and
-  `OPENAI_TIMEOUT_SECONDS`.
+  `OPENAI_MODEL`, embedding model/dimensions, `QDRANT_URL`,
+  `QDRANT_COLLECTION_NAME`, `QDRANT_TIMEOUT_SECONDS`, matching
+  `INTERNAL_API_KEY` (at least 32 characters), and `OPENAI_TIMEOUT_SECONDS`.
 - `apps/web/.env.local`: `NEXT_PUBLIC_API_BASE_URL`.
 
 `services/api/.env` and `services/ai/.env` must use the same internal key:

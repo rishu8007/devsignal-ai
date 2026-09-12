@@ -8,12 +8,14 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from openai import AsyncOpenAI
+from qdrant_client import AsyncQdrantClient
 
 from app.api.router import router
 from app.config import get_settings
 from app.errors import ApplicationError
 from app.providers.embedding_provider import EmbeddingsAPI, OpenAIEmbeddingProvider
 from app.providers.openai_provider import OpenAIProvider, ResponsesAPI
+from app.repositories.qdrant_repository import QdrantAPI, QdrantVectorRepository
 
 logger = logging.getLogger("devsignal-ai-service")
 
@@ -37,11 +39,24 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
         settings.openai_embedding_model,
         settings.openai_embedding_dimensions,
     )
+    qdrant_client = AsyncQdrantClient(
+        url=str(settings.qdrant_url),
+        timeout=settings.qdrant_timeout_seconds,
+    )
+    application.state.qdrant_repository = QdrantVectorRepository(
+        cast(QdrantAPI, qdrant_client),
+        settings.qdrant_collection_name,
+        settings.openai_embedding_dimensions,
+        settings.qdrant_timeout_seconds,
+    )
     logger.info("DevSignal AI service started")
     try:
         yield
     finally:
-        await application.state.provider.close()
+        try:
+            await application.state.provider.close()
+        finally:
+            await qdrant_client.close()
         logger.info("DevSignal AI service stopped")
 
 

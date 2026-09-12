@@ -35,6 +35,14 @@ example defaults to model `gpt-5.6-luna`. Tests use a fake provider and do
 not call OpenAI; live generation requires an OpenAI key and may incur usage
 costs. Generated claims still require human review.
 
+Qdrant is configured independently with `QDRANT_URL`,
+`QDRANT_COLLECTION_NAME`, and `QDRANT_TIMEOUT_SECONDS`. The configured
+collection uses cosine distance and the embedding dimensions from
+`OPENAI_EMBEDDING_DIMENSIONS`. The lifespan only constructs and closes the
+client; collection creation is explicit and never runs automatically at
+startup. Qdrant failures therefore do not prevent health checks or existing
+generation behavior from starting.
+
 ## Text chunking
 
 The Personal RAG text chunker is a pure, deterministic service in
@@ -72,3 +80,19 @@ The model and dimensions are configured independently from the generation
 does not silently truncate input. Provider failures are converted to safe
 internal error kinds, and the existing SDK retry policy remains the only retry
 layer.
+
+## Qdrant vector storage foundation
+
+`app/repositories/qdrant_repository.py` provides the storage boundary for
+future indexing and retrieval orchestration. Call `ensure_collection()`
+explicitly before writes. It creates a missing collection with the configured
+embedding dimensions and cosine distance, and verifies those settings for an
+existing collection. It never recreates or deletes an incompatible collection.
+
+Upserts use bounded batches and deterministic UUID point IDs derived from the
+owner, source, content version, chunker version, and chunk index. The logical
+`chunkId` remains in the payload alongside owner/source metadata, normalized
+offsets, text, and embedding model. Search requires an owner ID and always
+adds an owner filter; deletion requires both owner and source filters. This
+adapter does not yet revalidate MongoDB source existence/version, so owner
+filtering alone must not be treated as stale-source protection.

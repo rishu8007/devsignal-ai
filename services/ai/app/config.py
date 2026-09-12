@@ -2,7 +2,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field, SecretStr
+from pydantic import AnyHttpUrl, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 DEFAULT_EMBEDDING_MODEL = "text-embedding-3-small"
@@ -21,6 +21,13 @@ class Settings(BaseSettings):
         ge=1,
         le=3072,
     )
+    qdrant_url: AnyHttpUrl = AnyHttpUrl("http://127.0.0.1:6333")
+    qdrant_collection_name: str = Field(
+        default="devsignal_knowledge_chunks",
+        min_length=1,
+        max_length=255,
+    )
+    qdrant_timeout_seconds: int = Field(default=10, ge=1, le=120)
     internal_api_key: SecretStr = Field(default=SecretStr(""), min_length=32)
     openai_timeout_seconds: int = Field(default=45, ge=5, le=120)
 
@@ -31,6 +38,13 @@ class Settings(BaseSettings):
         case_sensitive=False,
         validate_default=True,
     )
+
+    @field_validator("qdrant_collection_name")
+    @classmethod
+    def validate_qdrant_collection_name(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("qdrant_collection_name must not be blank")
+        return value
 
 
 @lru_cache(maxsize=1)

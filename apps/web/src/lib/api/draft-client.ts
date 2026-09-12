@@ -23,6 +23,7 @@ export interface DraftLibraryResponse {
   summary: {
     draft: number;
     approved: number;
+    scheduled: number;
     total: number;
   };
 }
@@ -78,6 +79,7 @@ function isDraftLibraryResponse(value: unknown): value is DraftLibraryEnvelope {
     isRecord(summary) &&
     typeof summary.draft === "number" &&
     typeof summary.approved === "number" &&
+    typeof summary.scheduled === "number" &&
     typeof summary.total === "number"
   );
 }

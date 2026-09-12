@@ -11,6 +11,7 @@ export interface PublicDraft {
   angle: GenerationAngle;
   content: string;
   status: DraftStatus;
+  scheduledFor: string | null;
 }
 
 export interface PublicGeneration {
@@ -60,12 +61,25 @@ function isGeneration(value: unknown): value is PublicGeneration {
         variation.content.trim().length >= 100 &&
         variation.content.trim().length <= 3000 &&
         (variation.status === "draft" || variation.status === "approved") &&
+        (variation.scheduledFor === undefined ||
+          variation.scheduledFor === null ||
+          typeof variation.scheduledFor === "string") &&
         !angles.has(variation.angle) &&
         angles.add(variation.angle)
       );
     }) &&
     angles.size === 3
   );
+}
+
+function normalizeGeneration(value: PublicGeneration): PublicGeneration {
+  return {
+    ...value,
+    variations: value.variations.map((variation) => ({
+      ...variation,
+      scheduledFor: variation.scheduledFor ?? null,
+    })),
+  };
 }
 
 function isGenerationResponse(value: unknown): value is GenerationEnvelope {
@@ -85,7 +99,7 @@ export function getGeneration(
     `/signals/${encodeURIComponent(signalId)}/generations`,
     { method: "GET", signal, timeoutMs: 160_000 },
     isGenerationResponse,
-  ).then((response) => response.data.generation);
+  ).then((response) => normalizeGeneration(response.data.generation));
 }
 
 export function createGeneration(signalId: string): Promise<PublicGeneration> {
@@ -93,7 +107,7 @@ export function createGeneration(signalId: string): Promise<PublicGeneration> {
     `/signals/${encodeURIComponent(signalId)}/generations`,
     { method: "POST", body: "{}", timeoutMs: 160_000 },
     isGenerationResponse,
-  ).then((response) => response.data.generation);
+  ).then((response) => normalizeGeneration(response.data.generation));
 }
 
 export function editGeneration(
@@ -105,7 +119,7 @@ export function editGeneration(
     `/signals/${encodeURIComponent(signalId)}/generations/${encodeURIComponent(variationId)}`,
     { method: "PATCH", body: JSON.stringify({ content }), timeoutMs: 160_000 },
     isGenerationResponse,
-  ).then((response) => response.data.generation);
+  ).then((response) => normalizeGeneration(response.data.generation));
 }
 
 export function approveGeneration(
@@ -116,7 +130,30 @@ export function approveGeneration(
     `/signals/${encodeURIComponent(signalId)}/generations/${encodeURIComponent(variationId)}/approve`,
     { method: "POST", body: "{}", timeoutMs: 160_000 },
     isGenerationResponse,
-  ).then((response) => response.data.generation);
+  ).then((response) => normalizeGeneration(response.data.generation));
+}
+
+export function scheduleGeneration(
+  signalId: string,
+  variationId: string,
+  scheduledFor: string,
+): Promise<PublicGeneration> {
+  return request(
+    `/signals/${encodeURIComponent(signalId)}/generations/${encodeURIComponent(variationId)}/schedule`,
+    { method: "PUT", body: JSON.stringify({ scheduledFor }), timeoutMs: 160_000 },
+    isGenerationResponse,
+  ).then((response) => normalizeGeneration(response.data.generation));
+}
+
+export function removeGenerationSchedule(
+  signalId: string,
+  variationId: string,
+): Promise<PublicGeneration> {
+  return request(
+    `/signals/${encodeURIComponent(signalId)}/generations/${encodeURIComponent(variationId)}/schedule`,
+    { method: "DELETE", timeoutMs: 160_000 },
+    isGenerationResponse,
+  ).then((response) => normalizeGeneration(response.data.generation));
 }
 
 export type GenerationSignal = Pick<PublicSignal, "id" | "topic">;

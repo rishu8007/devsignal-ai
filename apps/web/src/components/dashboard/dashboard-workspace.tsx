@@ -7,6 +7,8 @@ import {
   createGeneration,
   editGeneration,
   getGeneration,
+  removeGenerationSchedule,
+  scheduleGeneration,
   type PublicDraft,
   type PublicGeneration,
 } from "@/lib/api/generation-client";
@@ -20,6 +22,8 @@ import { WorkspaceNavigation } from "@/components/dashboard/workspace-navigation
 import { type WorkspaceTab } from "@/components/dashboard/workspace-navigation";
 import { WorkspaceOverview } from "@/components/dashboard/workspace-overview";
 import { DraftsView } from "@/components/dashboard/drafts-view";
+import { listCalendar, type CalendarResponse, type PublicCalendarItem } from "@/lib/api/calendar-client";
+import { CalendarView } from "@/components/dashboard/calendar-view";
 
 export function DashboardWorkspace() {
   const { invalidateSession, status: authStatus } = useAuth();
@@ -45,6 +49,11 @@ export function DashboardWorkspace() {
   const [draftsLoading, setDraftsLoading] = useState(false);
   const [draftsError, setDraftsError] = useState<string | null>(null);
   const [generationOutcomeUncertain, setGenerationOutcomeUncertain] = useState(false);
+  const [calendarMonth, setCalendarMonth] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
+  const [calendarPage, setCalendarPage] = useState(1);
+  const [calendarData, setCalendarData] = useState<CalendarResponse | null>(null);
+  const [calendarLoading, setCalendarLoading] = useState(false);
+  const [calendarError, setCalendarError] = useState<string | null>(null);
   const requestId = useRef(0);
   const listController = useRef<AbortController | null>(null);
   const generationRequestId = useRef(0);
@@ -53,6 +62,9 @@ export function DashboardWorkspace() {
   const draftRequestId = useRef(0);
   const draftController = useRef<AbortController | null>(null);
   const draftQueryKey = useRef("");
+  const calendarRequestId = useRef(0);
+  const calendarController = useRef<AbortController | null>(null);
+  const calendarQueryKey = useRef("");
 
   useEffect(() => {
     mounted.current = true;
@@ -61,6 +73,7 @@ export function DashboardWorkspace() {
       listController.current?.abort();
       generationController.current?.abort();
       draftController.current?.abort();
+      calendarController.current?.abort();
     };
   }, []);
 
@@ -98,6 +111,53 @@ export function DashboardWorkspace() {
       }
     }
   }, [draftLibrary, invalidateSession]);
+
+  const loadCalendar = useCallback(async (month: Date, page: number) => {
+    const fromDate = new Date(month.getFullYear(), month.getMonth(), 1);
+    const toDate = new Date(month.getFullYear(), month.getMonth() + 1, 1);
+    const queryKey = `${fromDate.toISOString()}:${toDate.toISOString()}:${page}`;
+    if (calendarQueryKey.current === queryKey && calendarData !== null) return;
+    calendarQueryKey.current = queryKey;
+    const currentRequest = ++calendarRequestId.current;
+    calendarController.current?.abort();
+    const controller = new AbortController();
+    calendarController.current = controller;
+    setCalendarLoading(true);
+    setCalendarError(null);
+    try {
+      const result = await listCalendar({
+        from: fromDate.toISOString(),
+        to: toDate.toISOString(),
+        page,
+        limit: 20,
+        signal: controller.signal,
+      });
+      if (!mounted.current || currentRequest !== calendarRequestId.current) return;
+      setCalendarData(result);
+      if (page > Math.max(result.pagination.totalPages, 1)) {
+        setCalendarPage(Math.max(result.pagination.totalPages, 1));
+        calendarQueryKey.current = "";
+      }
+    } catch (error: unknown) {
+      if (error instanceof ApiClientError && error.code === "REQUEST_ABORTED") return;
+      if (!mounted.current || currentRequest !== calendarRequestId.current) return;
+      if (error instanceof ApiClientError && error.code === "AUTHENTICATION_REQUIRED") {
+        invalidateSession();
+        return;
+      }
+      setCalendarError("Unable to load the calendar. Please try again.");
+    } finally {
+      if (currentRequest === calendarRequestId.current) {
+        if (mounted.current) setCalendarLoading(false);
+        if (calendarController.current === controller) calendarController.current = null;
+      }
+    }
+  }, [calendarData, invalidateSession]);
+
+  const refreshCalendar = useCallback(() => {
+    calendarQueryKey.current = "";
+    void loadCalendar(calendarMonth, calendarPage);
+  }, [calendarMonth, calendarPage, loadCalendar]);
 
   const refreshDraftLibrary = useCallback(() => {
     draftQueryKey.current = "";
@@ -266,6 +326,7 @@ export function DashboardWorkspace() {
       setEditingVariationId(null);
       setEditorContent("");
       refreshDraftLibrary();
+      refreshCalendar();
     } catch (error: unknown) {
       if (!mounted.current) return;
       if (error instanceof ApiClientError && error.code === "AUTHENTICATION_REQUIRED") {
@@ -305,6 +366,7 @@ export function DashboardWorkspace() {
     mutationPending,
     selectedSignal,
     refreshDraftLibrary,
+    refreshCalendar,
   ]);
 
   const handleApprove = useCallback(async (variationId: string) => {
@@ -320,6 +382,7 @@ export function DashboardWorkspace() {
       if (!mounted.current) return;
       setGeneration(result);
       refreshDraftLibrary();
+      refreshCalendar();
     } catch (error: unknown) {
       if (!mounted.current) return;
       if (error instanceof ApiClientError && error.code === "AUTHENTICATION_REQUIRED") {
@@ -345,9 +408,71 @@ export function DashboardWorkspace() {
     } finally {
       if (mounted.current) setMutationPending(false);
     }
-  }, [editingVariationId, generation, invalidateSession, mutationPending, refreshDraftLibrary, selectedSignal]);
+  }, [editingVariationId, generation, invalidateSession, mutationPending, refreshCalendar, refreshDraftLibrary, selectedSignal]);
 
-  const findSignalAndOpenDraft = useCallback(async (draft: PublicDraftLibraryItem) => {
+  const handleSchedule = useCallback(async (variationId: string, localDate: string, localTime: string) => {
+    if (!selectedSignal || !generation || mutationPending || editingVariationId !== null) return;
+    const localValue = localDate && localTime ? `${localDate}T${localTime}` : "";
+    const parsedDate = localValue ? new Date(localValue) : null;
+    if (!localValue || !parsedDate || Number.isNaN(parsedDate.getTime()) || parsedDate.getTime() <= Date.now()) {
+      setMutationError("Choose a valid future date and time.");
+      return;
+    }
+    generationRequestId.current += 1;
+    generationController.current?.abort();
+    setMutationPending(true);
+    setMutationError(null);
+    setMutationUncertain(false);
+    try {
+      const result = await scheduleGeneration(selectedSignal.id, variationId, parsedDate.toISOString());
+      if (!mounted.current) return;
+      setGeneration(result);
+      refreshDraftLibrary();
+      refreshCalendar();
+    } catch (error: unknown) {
+      if (!mounted.current) return;
+      if (error instanceof ApiClientError && error.code === "AUTHENTICATION_REQUIRED") invalidateSession();
+      else if (error instanceof ApiClientError && ["REQUEST_TIMEOUT", "NETWORK_ERROR"].includes(error.code)) {
+        setMutationUncertain(true);
+        setMutationError("The schedule may still be saved. Check the calendar for the latest result.");
+      } else if (error instanceof ApiClientError && error.code === "VARIATION_NOT_APPROVED") {
+        setMutationError("Only approved drafts can be added to the calendar.");
+      } else {
+        setMutationError("Unable to save the planned date. Please try again.");
+      }
+    } finally {
+      if (mounted.current) setMutationPending(false);
+    }
+  }, [editingVariationId, generation, invalidateSession, mutationPending, refreshCalendar, refreshDraftLibrary, selectedSignal]);
+
+  const handleRemoveSchedule = useCallback(async (variationId: string) => {
+    if (!selectedSignal || !generation || mutationPending || editingVariationId !== null) return;
+    generationRequestId.current += 1;
+    generationController.current?.abort();
+    setMutationPending(true);
+    setMutationError(null);
+    setMutationUncertain(false);
+    try {
+      const result = await removeGenerationSchedule(selectedSignal.id, variationId);
+      if (!mounted.current) return;
+      setGeneration(result);
+      refreshDraftLibrary();
+      refreshCalendar();
+    } catch (error: unknown) {
+      if (!mounted.current) return;
+      if (error instanceof ApiClientError && error.code === "AUTHENTICATION_REQUIRED") invalidateSession();
+      else if (error instanceof ApiClientError && ["REQUEST_TIMEOUT", "NETWORK_ERROR"].includes(error.code)) {
+        setMutationUncertain(true);
+        setMutationError("Removal may still be processing. Check the calendar for the latest result.");
+      } else {
+        setMutationError("Unable to remove this planned date. Please try again.");
+      }
+    } finally {
+      if (mounted.current) setMutationPending(false);
+    }
+  }, [editingVariationId, generation, invalidateSession, mutationPending, refreshCalendar, refreshDraftLibrary, selectedSignal]);
+
+  const findSignalAndOpenDraft = useCallback(async (draft: Pick<PublicDraftLibraryItem | PublicCalendarItem, "signalId">) => {
     if (mutationPending || editingVariationId !== null) return;
     const controller = new AbortController();
     try {
@@ -383,7 +508,9 @@ export function DashboardWorkspace() {
   useEffect(() => {
     if (authStatus !== "authenticated") {
       draftController.current?.abort();
+      calendarController.current?.abort();
       draftQueryKey.current = "";
+      calendarQueryKey.current = "";
       const timer = window.setTimeout(() => {
         setDraftLibrary(null);
         setDraftsError(null);
@@ -392,6 +519,8 @@ export function DashboardWorkspace() {
         setGeneration(null);
         setEditingVariationId(null);
         setEditorContent("");
+        setCalendarData(null);
+        setCalendarPage(1);
       }, 0);
       return () => window.clearTimeout(timer);
     }
@@ -400,6 +529,15 @@ export function DashboardWorkspace() {
     }, 0);
     return () => window.clearTimeout(timer);
   }, [authStatus, draftFilter, draftPage, loadDraftLibrary]);
+
+  useEffect(() => {
+    if (authStatus !== "authenticated") return;
+    if (activeTab !== "calendar") return;
+    const timer = window.setTimeout(() => {
+      void loadCalendar(calendarMonth, calendarPage);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [activeTab, authStatus, calendarMonth, calendarPage, loadCalendar]);
 
   const handleCreate = useCallback(async (payload: SignalPayload) => {
     setCreatePending(true);
@@ -422,7 +560,11 @@ export function DashboardWorkspace() {
 
   return (
     <>
-      <WorkspaceOverview total={total} approved={draftLibrary?.summary.approved ?? null} />
+      <WorkspaceOverview
+        total={total}
+        approved={draftLibrary?.summary.approved ?? null}
+        scheduled={draftLibrary?.summary.scheduled ?? null}
+      />
       <WorkspaceNavigation
         activeTab={activeTab}
         onChange={setActiveTab}
@@ -457,6 +599,10 @@ export function DashboardWorkspace() {
         onCancelEditing={handleCancelEditing}
         onSaveEditing={() => void handleSaveEditing()}
         onApprove={(variationId) => void handleApprove(variationId)}
+        onSchedule={(variationId, localDate, localTime) =>
+          void handleSchedule(variationId, localDate, localTime)
+        }
+        onRemoveSchedule={(variationId) => void handleRemoveSchedule(variationId)}
         onGenerate={() => void handleGenerate()}
         onRetry={() => {
           if (selectedSignal) {
@@ -488,9 +634,34 @@ export function DashboardWorkspace() {
         />
       )}
       {activeTab === "calendar" && (
-        <p className="mt-8 rounded-xl border border-dashed border-slate-300 bg-white/70 p-6 text-sm text-slate-500">
-          Calendar is coming soon.
-        </p>
+        <CalendarView
+          month={calendarMonth}
+          data={calendarData}
+          loading={calendarLoading}
+          error={calendarError}
+          onPrevious={() => {
+            setCalendarMonth((current) => new Date(current.getFullYear(), current.getMonth() - 1, 1));
+            setCalendarPage(1);
+            calendarQueryKey.current = "";
+          }}
+          onNext={() => {
+            setCalendarMonth((current) => new Date(current.getFullYear(), current.getMonth() + 1, 1));
+            setCalendarPage(1);
+            calendarQueryKey.current = "";
+          }}
+          onToday={() => {
+            const today = new Date();
+            setCalendarMonth(new Date(today.getFullYear(), today.getMonth(), 1));
+            setCalendarPage(1);
+            calendarQueryKey.current = "";
+          }}
+          onPageChange={(page) => setCalendarPage(page)}
+          onRetry={() => {
+            calendarQueryKey.current = "";
+            void loadCalendar(calendarMonth, calendarPage);
+          }}
+          onOpen={(item) => void findSignalAndOpenDraft(item)}
+        />
       )}
     </>
   );

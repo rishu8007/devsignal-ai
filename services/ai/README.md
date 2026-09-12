@@ -34,3 +34,19 @@ The service requires `OPENAI_API_KEY`, `OPENAI_MODEL`, and an
 example defaults to model `gpt-5.6-luna`. Tests use a fake provider and do
 not call OpenAI; live generation requires an OpenAI key and may incur usage
 costs. Generated claims still require human review.
+
+## Text chunking
+
+The Personal RAG text chunker is a pure, deterministic service in
+`app/services/chunking.py`. It currently accepts normalized user note text up
+to 20,000 characters, uses a maximum of 1,000 Unicode code points per chunk,
+and overlaps adjacent chunks by 150 code points. It prefers paragraph
+boundaries and then whitespace boundaries near the end of each candidate
+window, while preserving all other characters and reporting offsets against
+the normalized LF source text.
+
+These are character-based limits, not model-token limits. Token budgeting and
+embedding-model-specific constraints will be decided later. The chunker
+version is part of each output so changing its rules requires a new version
+and reindexing; the logical chunk IDs are source references and are not
+promised to be usable directly as Qdrant point IDs.

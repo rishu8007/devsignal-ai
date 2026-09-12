@@ -20,6 +20,7 @@ export interface PublicDraftLibrary {
   summary: {
     draft: number;
     approved: number;
+    scheduled: number;
     total: number;
   };
 }

@@ -75,7 +75,7 @@ test("draft library scopes repository access to the authenticated owner and stat
           generationUpdatedAt: new Date("2026-09-12T00:00:00.000Z"),
         }],
         total: 1,
-        summary: { draft: 2, approved: 1, total: 3 },
+        summary: { draft: 2, approved: 1, scheduled: 1, total: 3 },
       },
       calls,
     ),
@@ -107,7 +107,7 @@ test("summary is independent of selected status and page, and empty totals are z
       {
         drafts: [],
         total: 0,
-        summary: { draft: 3, approved: 2, total: 5 },
+        summary: { draft: 3, approved: 2, scheduled: 1, total: 5 },
       },
       [],
     ),
@@ -120,7 +120,29 @@ test("summary is independent of selected status and page, and empty totals are z
     total: 0,
     totalPages: 0,
   });
-  assert.deepEqual(result.summary, { draft: 3, approved: 2, total: 5 });
+  assert.deepEqual(result.summary, { draft: 3, approved: 2, scheduled: 1, total: 5 });
+});
+
+test("scheduled summary is owner-scoped and independent of filter and page", async () => {
+  const calls: Array<{ ownerId: string; page: number; limit: number; status?: "draft" | "approved" }> = [];
+  const result = await listDraftsForUser(
+    ownerId,
+    9,
+    1,
+    "draft",
+    repositoryWithResult(
+      {
+        drafts: [],
+        total: 0,
+        summary: { draft: 4, approved: 3, scheduled: 2, total: 7 },
+      },
+      calls,
+    ),
+  );
+
+  assert.deepEqual(calls, [{ ownerId, page: 9, limit: 1, status: "draft" }]);
+  assert.equal(result.summary.scheduled, 2);
+  assert.equal(result.pagination.total, 0);
 });
 
 test("invalid authenticated owner IDs fail before repository access", async () => {
@@ -128,7 +150,7 @@ test("invalid authenticated owner IDs fail before repository access", async () =
   const repository: DraftRepositoryBoundary = {
     listDraftsByOwner: async () => {
       called = true;
-      return { drafts: [], total: 0, summary: { draft: 0, approved: 0, total: 0 } };
+      return { drafts: [], total: 0, summary: { draft: 0, approved: 0, scheduled: 0, total: 0 } };
     },
   };
 

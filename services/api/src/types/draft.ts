@@ -20,6 +20,7 @@ export interface DraftListResult {
   summary: {
     draft: number;
     approved: number;
+    scheduled: number;
     total: number;
   };
 }

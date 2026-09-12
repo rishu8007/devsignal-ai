@@ -136,10 +136,15 @@ interface DraftSummaryRow {
   count: number;
 }
 
+interface ScheduledSummaryRow {
+  count: number;
+}
+
 interface DraftAggregationResult {
   drafts: DraftAggregationRow[];
   total: DraftCountRow[];
   summary: DraftSummaryRow[];
+  scheduled: ScheduledSummaryRow[];
 }
 
 export async function listDraftsByOwner(
@@ -193,14 +198,25 @@ export async function listDraftsByOwner(
             },
           },
         ],
+        scheduled: [
+          { $unwind: "$variations" },
+          {
+            $match: {
+              "variations.status": "approved",
+              "variations.scheduledFor": { $type: "date" },
+            },
+          },
+          { $count: "count" },
+        ],
       },
     },
   ]).exec();
 
-  const summary = { draft: 0, approved: 0 };
+  const summary = { draft: 0, approved: 0, scheduled: 0 };
   for (const item of result?.summary ?? []) {
     summary[item._id] = item.count;
   }
+  summary.scheduled = result?.scheduled[0]?.count ?? 0;
 
   return {
     drafts: (result?.drafts ?? []).map((draft) => ({

@@ -8,6 +8,8 @@ import {
   approveGenerationVariationForSignal,
   createGenerationForSignal,
   editGenerationVariationForSignal,
+  scheduleGenerationVariationForSignal,
+  clearGenerationVariationScheduleForSignal,
   type GenerationRepositoryBoundary,
 } from "../src/services/generation.service.js";
 import type {
@@ -113,6 +115,8 @@ function setup(
       return makeGeneration();
     },
     updateGenerationVariation: async () => options.existing ?? makeGeneration(),
+    scheduleGenerationVariation: async () => options.existing ?? makeGeneration(),
+    clearGenerationVariationSchedule: async () => options.existing ?? makeGeneration(),
   };
   const client: AiGenerationClient = {
     generate: async () => {
@@ -276,14 +280,14 @@ function setupVariationUpdates(
     ownerId: string;
     signalId: string;
     variationId: string;
-    update: { content?: string; status: "draft" | "approved" };
+    update: { content?: string; status: "draft" | "approved"; scheduledFor?: Date | null };
   }>;
 } {
   const updates: Array<{
     ownerId: string;
     signalId: string;
     variationId: string;
-    update: { content?: string; status: "draft" | "approved" };
+    update: { content?: string; status: "draft" | "approved"; scheduledFor?: Date | null };
   }> = [];
   const generation = initial;
   const base = setup({ existing: generation });
@@ -331,7 +335,11 @@ test("editing updates only the targeted variation and preserves its identity and
     ownerId,
     signalId,
     variationId: target._id.toString(),
-    update: { content: "edited content ".repeat(10).trim(), status: "draft" },
+    update: {
+      content: "edited content ".repeat(10).trim(),
+      status: "draft",
+      scheduledFor: null,
+    },
   });
   assert.equal(response.variations[1].id, target._id.toString());
   assert.equal(response.variations[1].angle, "learning_story");
@@ -424,4 +432,176 @@ test("editing and approval reject missing owned resources without an AI operatio
     ),
     { code: "VARIATION_NOT_FOUND" },
   );
+});
+
+test("scheduling an approved variation replaces its planned date", async () => {
+  const generation = makeGeneration();
+  generation.variations[1].status = "approved";
+  const scheduledDates: Date[] = [];
+  const { repository } = setup({ existing: generation });
+  const schedulingRepository: GenerationRepositoryBoundary = {
+    ...repository,
+    scheduleGenerationVariation: async (_owner, _signal, variationId, scheduledFor) => {
+      scheduledDates.push(scheduledFor);
+      const target = generation.variations.find((variation) => variation._id.toString() === variationId);
+      if (target) target.scheduledFor = scheduledFor;
+      return generation;
+    },
+  };
+
+  const first = new Date("2030-01-01T12:00:00.000Z");
+  const replacement = new Date("2030-01-02T12:00:00.000Z");
+  await scheduleGenerationVariationForSignal(
+    ownerId,
+    signalId,
+    generation.variations[1]._id.toString(),
+    first,
+    schedulingRepository,
+    new Date("2029-01-01T00:00:00.000Z"),
+  );
+  const response = await scheduleGenerationVariationForSignal(
+    ownerId,
+    signalId,
+    generation.variations[1]._id.toString(),
+    replacement,
+    schedulingRepository,
+    new Date("2029-01-01T00:00:00.000Z"),
+  );
+
+  assert.deepEqual(scheduledDates, [first, replacement]);
+  assert.equal(response.variations[1].scheduledFor?.toISOString(), replacement.toISOString());
+});
+
+test("draft scheduling is rejected even when a sibling is approved", async () => {
+  const generation = makeGeneration();
+  generation.variations[1].status = "approved";
+  const { repository } = setup({ existing: generation });
+  let scheduleCalls = 0;
+  const guardedRepository: GenerationRepositoryBoundary = {
+    ...repository,
+    scheduleGenerationVariation: async () => {
+      scheduleCalls += 1;
+      return null;
+    },
+  };
+
+  await assert.rejects(
+    scheduleGenerationVariationForSignal(
+      ownerId,
+      signalId,
+      generation.variations[0]._id.toString(),
+      new Date("2030-01-01T12:00:00.000Z"),
+      guardedRepository,
+      new Date("2029-01-01T00:00:00.000Z"),
+    ),
+    { code: "VARIATION_NOT_APPROVED" },
+  );
+  assert.equal(scheduleCalls, 1);
+});
+
+test("schedule operations preserve owner isolation and distinguish missing resources", async () => {
+  const { repository } = setup({ signal: null });
+  await assert.rejects(
+    scheduleGenerationVariationForSignal(
+      otherOwnerId,
+      signalId,
+      "507f1f77bcf86cd799439015",
+      new Date("2030-01-01T12:00:00.000Z"),
+      repository,
+      new Date("2029-01-01T00:00:00.000Z"),
+    ),
+    { code: "SIGNAL_NOT_FOUND" },
+  );
+
+  const missingGeneration = setup({ existing: null });
+  const missingGenerationRepository: GenerationRepositoryBoundary = {
+    ...missingGeneration.repository,
+    clearGenerationVariationSchedule: async () => null,
+  };
+  await assert.rejects(
+    clearGenerationVariationScheduleForSignal(
+      ownerId,
+      signalId,
+      "507f1f77bcf86cd799439015",
+      missingGenerationRepository,
+    ),
+    { code: "GENERATION_NOT_FOUND" },
+  );
+
+  const missingVariation = setup({ existing: makeGeneration() });
+  const missingVariationRepository: GenerationRepositoryBoundary = {
+    ...missingVariation.repository,
+    clearGenerationVariationSchedule: async () => null,
+  };
+  await assert.rejects(
+    clearGenerationVariationScheduleForSignal(
+      ownerId,
+      signalId,
+      "507f1f77bcf86cd799439099",
+      missingVariationRepository,
+    ),
+    { code: "VARIATION_NOT_FOUND" },
+  );
+});
+
+test("schedule removal is repeated safely and editing clears approval and schedule", async () => {
+  const generation = makeGeneration();
+  generation.variations[0].status = "approved";
+  generation.variations[0].scheduledFor = new Date("2030-01-01T12:00:00.000Z");
+  const { repository } = setup({ existing: generation });
+  let removals = 0;
+  const statefulRepository: GenerationRepositoryBoundary = {
+    ...repository,
+    clearGenerationVariationSchedule: async () => {
+      removals += 1;
+      generation.variations[0].scheduledFor = null;
+      return generation;
+    },
+    updateGenerationVariation: async (_owner, _signal, variationId, update) => {
+      const target = generation.variations.find((variation) => variation._id.toString() === variationId);
+      if (target) {
+        target.content = update.content ?? target.content;
+        target.status = update.status;
+        target.scheduledFor = update.scheduledFor ?? target.scheduledFor;
+      }
+      return generation;
+    },
+  };
+
+  await clearGenerationVariationScheduleForSignal(
+    ownerId,
+    signalId,
+    generation.variations[0]._id.toString(),
+    statefulRepository,
+  );
+  await clearGenerationVariationScheduleForSignal(
+    ownerId,
+    signalId,
+    generation.variations[0]._id.toString(),
+    statefulRepository,
+  );
+  const edited = await editGenerationVariationForSignal(
+    ownerId,
+    signalId,
+    generation.variations[0]._id.toString(),
+    "edited content ".repeat(10),
+    statefulRepository,
+  );
+
+  assert.equal(removals, 2);
+  assert.equal(edited.variations[0].status, "draft");
+  assert.equal(edited.variations[0].scheduledFor, null);
+  assert.equal(edited.variations[1].content, "l".repeat(100));
+  assert.equal(edited.variations[1].status, "draft");
+});
+
+test("legacy variations without scheduledFor are exposed as null", async () => {
+  const { repository } = setup({ existing: makeGeneration() });
+  const response = await approveGenerationVariationForSignal(
+    ownerId,
+    signalId,
+    "507f1f77bcf86cd799439015",
+    repository,
+  );
+  assert.equal(response.variations[0].scheduledFor, null);
 });

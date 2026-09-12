@@ -5,8 +5,13 @@ import {
   createGenerationForSignal,
   editGenerationVariationForSignal,
   getGenerationForSignal,
+  scheduleGenerationVariationForSignal,
+  clearGenerationVariationScheduleForSignal,
 } from "../services/generation.service.js";
-import type { EditGenerationVariationInput } from "../validation/generation.validation.js";
+import type {
+  EditGenerationVariationInput,
+  ScheduleGenerationVariationInput,
+} from "../validation/generation.validation.js";
 
 export async function createGeneration(request: Request, response: Response): Promise<void> {
   const ownerId = request.auth?.userId;
@@ -63,6 +68,41 @@ export async function approveGenerationVariation(
   }
 
   const generation = await approveGenerationVariationForSignal(
+    ownerId,
+    signalId,
+    variationId,
+  );
+  response.status(200).json({ success: true, data: { generation } });
+}
+
+export async function scheduleGenerationVariation(
+  request: Request<Record<string, string>, unknown, ScheduleGenerationVariationInput>,
+  response: Response,
+): Promise<void> {
+  const ownerId = request.auth?.userId;
+  const { signalId, variationId } = response.locals;
+  if (!ownerId) {
+    throw new AppError(401, "AUTHENTICATION_REQUIRED", "Authentication is required");
+  }
+  const generation = await scheduleGenerationVariationForSignal(
+    ownerId,
+    signalId,
+    variationId,
+    new Date(request.body.scheduledFor),
+  );
+  response.status(200).json({ success: true, data: { generation } });
+}
+
+export async function clearGenerationVariationSchedule(
+  request: Request,
+  response: Response,
+): Promise<void> {
+  const ownerId = request.auth?.userId;
+  const { signalId, variationId } = response.locals;
+  if (!ownerId) {
+    throw new AppError(401, "AUTHENTICATION_REQUIRED", "Authentication is required");
+  }
+  const generation = await clearGenerationVariationScheduleForSignal(
     ownerId,
     signalId,
     variationId,

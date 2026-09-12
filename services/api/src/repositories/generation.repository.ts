@@ -32,6 +32,7 @@ export function createGeneration(
       angle: variation.angle,
       content: variation.content,
       status: "draft",
+      scheduledFor: null,
     })),
   });
 }
@@ -40,14 +41,21 @@ export function updateGenerationVariation(
   ownerId: string,
   signalId: string,
   variationId: string,
-  update: { content?: string; status: "draft" | "approved" },
+  update: {
+    content?: string;
+    status: "draft" | "approved";
+    scheduledFor?: Date | null;
+  },
 ): Promise<GenerationDocument | null> {
-  const fields: Record<string, string | Date> = {
+  const fields: Record<string, string | Date | null> = {
     "variations.$.status": update.status,
     updatedAt: new Date(),
   };
   if (update.content !== undefined) {
     fields["variations.$.content"] = update.content;
+  }
+  if (update.scheduledFor !== undefined) {
+    fields["variations.$.scheduledFor"] = update.scheduledFor;
   }
 
   return GenerationModel.findOneAndUpdate(
@@ -63,6 +71,50 @@ export function updateGenerationVariation(
     .exec();
 }
 
+export function scheduleGenerationVariation(
+  ownerId: string,
+  signalId: string,
+  variationId: string,
+  scheduledFor: Date,
+): Promise<GenerationDocument | null> {
+  return GenerationModel.findOneAndUpdate(
+    {
+      ownerId,
+      signalId,
+      "variations._id": variationId,
+      variations: { $elemMatch: { _id: variationId, status: "approved" } },
+    },
+    {
+      $set: {
+        "variations.$.scheduledFor": scheduledFor,
+        updatedAt: new Date(),
+      },
+    },
+    { new: true, runValidators: true },
+  )
+    .lean<GenerationDocument>()
+    .exec();
+}
+
+export function clearGenerationVariationSchedule(
+  ownerId: string,
+  signalId: string,
+  variationId: string,
+): Promise<GenerationDocument | null> {
+  return GenerationModel.findOneAndUpdate(
+    { ownerId, signalId, "variations._id": variationId },
+    {
+      $set: {
+        "variations.$.scheduledFor": null,
+        updatedAt: new Date(),
+      },
+    },
+    { new: true, runValidators: true },
+  )
+    .lean<GenerationDocument>()
+    .exec();
+}
+
 interface DraftAggregationRow {
   _id: Types.ObjectId;
   generationId: Types.ObjectId;
@@ -72,6 +124,7 @@ interface DraftAggregationRow {
   content: string;
   status: DraftStatus;
   generationUpdatedAt: Date;
+  scheduledFor: Date | null;
 }
 
 interface DraftCountRow {
@@ -121,6 +174,7 @@ export async function listDraftsByOwner(
               angle: "$variations.angle",
               content: "$variations.content",
               status: "$variations.status",
+              scheduledFor: "$variations.scheduledFor",
               generationUpdatedAt: "$updatedAt",
             },
           },
@@ -157,6 +211,7 @@ export async function listDraftsByOwner(
       angle: draft.angle as DraftListResult["drafts"][number]["angle"],
       content: draft.content,
       status: draft.status,
+      scheduledFor: draft.scheduledFor ?? null,
       generationUpdatedAt: draft.generationUpdatedAt,
     })),
     total: result?.total[0]?.count ?? 0,
@@ -164,5 +219,94 @@ export async function listDraftsByOwner(
       ...summary,
       total: summary.draft + summary.approved,
     },
+  };
+}
+
+export interface CalendarListResult {
+  items: Array<{
+    id: string;
+    generationId: string;
+    signalId: string;
+    topic: string;
+    angle: "technical_depth" | "learning_story" | "professional_impact";
+    content: string;
+    status: "approved";
+    scheduledFor: Date;
+  }>;
+  total: number;
+}
+
+interface CalendarAggregationResult {
+  items: Array<{
+    _id: Types.ObjectId;
+    generationId: Types.ObjectId;
+    signalId: Types.ObjectId;
+    topic: string;
+    angle: "technical_depth" | "learning_story" | "professional_impact";
+    content: string;
+    status: "approved";
+    scheduledFor: Date;
+  }>;
+  total: DraftCountRow[];
+}
+
+export async function listCalendarByOwner(
+  ownerId: string,
+  from: Date,
+  to: Date,
+  page: number,
+  limit: number,
+): Promise<CalendarListResult> {
+  const [result] = await GenerationModel.aggregate<CalendarAggregationResult>([
+    { $match: { ownerId: new Types.ObjectId(ownerId) } },
+    { $unwind: "$variations" },
+    {
+      $match: {
+        "variations.status": "approved",
+        "variations.scheduledFor": { $gte: from, $lt: to },
+      },
+    },
+    {
+      $facet: {
+        items: [
+          {
+            $sort: {
+              "variations.scheduledFor": 1,
+              _id: 1,
+              "variations._id": 1,
+            },
+          },
+          { $skip: (page - 1) * limit },
+          { $limit: limit },
+          {
+            $project: {
+              _id: "$variations._id",
+              generationId: "$_id",
+              signalId: 1,
+              topic: "$source.topic",
+              angle: "$variations.angle",
+              content: "$variations.content",
+              status: "$variations.status",
+              scheduledFor: "$variations.scheduledFor",
+            },
+          },
+        ],
+        total: [{ $count: "count" }],
+      },
+    },
+  ]).exec();
+
+  return {
+    items: (result?.items ?? []).map((item) => ({
+      id: item._id.toString(),
+      generationId: item.generationId.toString(),
+      signalId: item.signalId.toString(),
+      topic: item.topic,
+      angle: item.angle,
+      content: item.content,
+      status: item.status,
+      scheduledFor: item.scheduledFor,
+    })),
+    total: result?.total[0]?.count ?? 0,
   };
 }

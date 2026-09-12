@@ -7,6 +7,7 @@ import {
   approveGenerationVariationSchema,
   editGenerationVariationSchema,
   generationVariationParamsSchema,
+  scheduleGenerationVariationSchema,
 } from "../src/validation/generation.validation.js";
 
 test("generation editing middleware rejects unauthenticated requests", () => {
@@ -71,6 +72,37 @@ test("editing and approval bodies enforce their strict contracts", () => {
   );
   assert.equal(
     approveGenerationVariationSchema.safeParse({ content: "unexpected" }).success,
+    false,
+  );
+});
+
+test("schedule route authentication and strict request validation", () => {
+  let receivedError: unknown;
+  authenticationMiddleware(
+    { cookies: {} } as Request,
+    {} as never,
+    (error?: unknown) => {
+      receivedError = error;
+    },
+  );
+  assert.equal((receivedError as AppError).code, "AUTHENTICATION_REQUIRED");
+  assert.equal(
+    scheduleGenerationVariationSchema.safeParse({
+      scheduledFor: "2030-01-01T00:00:00Z",
+    }).success,
+    true,
+  );
+  assert.equal(
+    scheduleGenerationVariationSchema.safeParse({
+      scheduledFor: "2030-01-01T00:00:00",
+    }).success,
+    false,
+  );
+  assert.equal(
+    scheduleGenerationVariationSchema.safeParse({
+      scheduledFor: "2030-01-01T00:00:00Z",
+      ownerId: "unexpected",
+    }).success,
     false,
   );
 });

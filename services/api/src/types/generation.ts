@@ -33,6 +33,7 @@ export interface PublicGenerationVariation {
   angle: GenerationAngle;
   content: string;
   status: "draft" | "approved";
+  scheduledFor: Date | null;
 }
 
 export interface PublicGenerationDto {

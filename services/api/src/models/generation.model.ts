@@ -21,6 +21,10 @@ const generationVariationSchema = new Schema(
       enum: ["draft", "approved"],
       default: "draft",
     },
+    scheduledFor: {
+      type: Date,
+      default: null,
+    },
   },
   { _id: true, versionKey: false },
 );

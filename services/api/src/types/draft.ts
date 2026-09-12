@@ -10,6 +10,7 @@ export interface PublicDraftListItem {
   angle: GenerationAngle;
   content: string;
   status: DraftStatus;
+  scheduledFor: Date | null;
   generationUpdatedAt: Date;
 }
 

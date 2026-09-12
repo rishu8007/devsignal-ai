@@ -23,7 +23,19 @@ export const editGenerationVariationSchema = z
 
 export const approveGenerationVariationSchema = z.object({}).strict();
 
+const explicitTimezoneTimestamp = z
+  .string()
+  .refine((value) => /(?:Z|[+-]\d{2}:\d{2})$/.test(value), "Timestamp must include an explicit timezone")
+  .refine((value) => !Number.isNaN(Date.parse(value)), "Timestamp must be valid");
+
+export const scheduleGenerationVariationSchema = z
+  .object({ scheduledFor: explicitTimezoneTimestamp })
+  .strict();
+
 export type EditGenerationVariationInput = z.infer<typeof editGenerationVariationSchema>;
+export type ScheduleGenerationVariationInput = z.infer<
+  typeof scheduleGenerationVariationSchema
+>;
 
 export const aiGenerationResponseSchema = z
   .object({

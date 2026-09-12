@@ -6,6 +6,8 @@ import {
   createGeneration,
   findGenerationByOwnerAndSignal,
   updateGenerationVariation,
+  scheduleGenerationVariation,
+  clearGenerationVariationSchedule,
 } from "../repositories/generation.repository.js";
 import { findSignalByIdAndOwner } from "../repositories/signal.repository.js";
 import { GENERATION_ANGLES } from "../types/generation.js";
@@ -23,6 +25,8 @@ export interface GenerationRepositoryBoundary {
   createGeneration: typeof createGeneration;
   findSignalByIdAndOwner: typeof findSignalByIdAndOwner;
   updateGenerationVariation: typeof updateGenerationVariation;
+  scheduleGenerationVariation: typeof scheduleGenerationVariation;
+  clearGenerationVariationSchedule: typeof clearGenerationVariationSchedule;
 }
 
 const defaultRepository: GenerationRepositoryBoundary = {
@@ -30,6 +34,8 @@ const defaultRepository: GenerationRepositoryBoundary = {
   createGeneration,
   findSignalByIdAndOwner,
   updateGenerationVariation,
+  scheduleGenerationVariation,
+  clearGenerationVariationSchedule,
 };
 
 export interface GenerationOperationResult {
@@ -91,7 +97,7 @@ export async function editGenerationVariationForSignal(
     ownerId,
     signalId,
     variationId,
-    { content: content.trim(), status: "draft" },
+    { content: content.trim(), status: "draft", scheduledFor: null },
   );
   return requireUpdatedVariation(generation, repository, ownerId, signalId);
 }
@@ -110,6 +116,53 @@ export async function approveGenerationVariationForSignal(
     { status: "approved" },
   );
   return requireUpdatedVariation(generation, repository, ownerId, signalId);
+}
+
+export async function scheduleGenerationVariationForSignal(
+  ownerId: string,
+  signalId: string,
+  variationId: string,
+  scheduledFor: Date,
+  repository: GenerationRepositoryBoundary = defaultRepository,
+  now = new Date(),
+): Promise<PublicGenerationDto> {
+  await findSignalByOwner(ownerId, signalId, repository);
+  if (scheduledFor <= now) {
+    throw new AppError(400, "VALIDATION_ERROR", "Invalid request data");
+  }
+  const generation = await repository.scheduleGenerationVariation(
+    ownerId,
+    signalId,
+    variationId,
+    scheduledFor,
+  );
+  if (generation) {
+    return toPublicGenerationDto(generation);
+  }
+  const existing = await repository.findGenerationByOwnerAndSignal(ownerId, signalId);
+  if (!existing) {
+    throw new AppError(404, "GENERATION_NOT_FOUND", "No generation exists for this signal");
+  }
+  const variation = existing.variations.find((item) => item._id.toString() === variationId);
+  if (!variation) {
+    throw new AppError(404, "VARIATION_NOT_FOUND", "Generation variation not found");
+  }
+  throw new AppError(409, "VARIATION_NOT_APPROVED", "Generation variation must be approved");
+}
+
+export async function clearGenerationVariationScheduleForSignal(
+  ownerId: string,
+  signalId: string,
+  variationId: string,
+  repository: GenerationRepositoryBoundary = defaultRepository,
+): Promise<PublicGenerationDto> {
+  await findSignalByOwner(ownerId, signalId, repository);
+  return requireUpdatedVariation(
+    await repository.clearGenerationVariationSchedule(ownerId, signalId, variationId),
+    repository,
+    ownerId,
+    signalId,
+  );
 }
 
 async function findSignalByOwner(
@@ -229,6 +282,7 @@ function toPublicGenerationDto(generation: GenerationDocument): PublicGeneration
       angle: variation.angle,
       content: variation.content,
       status: variation.status,
+      scheduledFor: variation.scheduledFor ?? null,
     })),
     createdAt: generation.createdAt,
     updatedAt: generation.updatedAt,

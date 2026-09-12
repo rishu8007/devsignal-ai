@@ -1,0 +1,110 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  web:
+    name: Web checks
+    runs-on: ubuntu-latest
+    env:
+      NEXT_PUBLIC_API_BASE_URL: http://127.0.0.1:4000/api/v1
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Lint web
+        run: npm run lint --workspace=apps/web
+
+      - name: Build web
+        run: npm run build --workspace=apps/web
+
+  api:
+    name: API checks
+    runs-on: ubuntu-latest
+    env:
+      NODE_ENV: test
+      WEB_ORIGIN: http://127.0.0.1:3000
+      MONGODB_URI: mongodb://127.0.0.1:27017/devsignal_ci
+      JWT_ACCESS_SECRET: ci-only-placeholder-secret-at-least-32-characters
+      JWT_ACCESS_TTL_SECONDS: 3600
+      JWT_ISSUER: devsignal-api
+      JWT_AUDIENCE: devsignal-web
+      AUTH_COOKIE_NAME: devsignal_access_token
+      AI_SERVICE_URL: http://127.0.0.1:8000
+      AI_INTERNAL_API_KEY: ci-only-internal-key-at-least-32-characters
+      AI_SERVICE_TIMEOUT_MS: 150000
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Typecheck API
+        run: npm run typecheck --workspace=services/api
+
+      - name: Build API
+        run: npm run build --workspace=services/api
+
+      - name: Test API
+        run: npm test --workspace=services/api
+
+  ai:
+    name: AI checks
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/ai
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+          cache: pip
+          cache-dependency-path: services/ai/pyproject.toml
+
+      - name: Install AI service with development dependencies
+        run: python -m pip install -e ".[dev]"
+
+      - name: Check Python formatting
+        run: ruff format --check .
+
+      - name: Run Ruff
+        run: ruff check .
+
+      - name: Run mypy
+        run: mypy app
+
+      - name: Run pytest
+        run: pytest

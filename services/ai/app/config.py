@@ -5,6 +5,9 @@ from typing import Literal
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+DEFAULT_EMBEDDING_MODEL = "text-embedding-3-small"
+DEFAULT_EMBEDDING_DIMENSIONS = 1536
+
 
 class Settings(BaseSettings):
     app_env: Literal["development", "test", "production"] = "development"
@@ -12,6 +15,12 @@ class Settings(BaseSettings):
     port: int = Field(default=8000, ge=1, le=65535)
     openai_api_key: SecretStr = Field(default=SecretStr(""), min_length=1)
     openai_model: str = Field(default="gpt-5.6-luna", min_length=1)
+    openai_embedding_model: str = Field(default=DEFAULT_EMBEDDING_MODEL, min_length=1)
+    openai_embedding_dimensions: int = Field(
+        default=DEFAULT_EMBEDDING_DIMENSIONS,
+        ge=1,
+        le=3072,
+    )
     internal_api_key: SecretStr = Field(default=SecretStr(""), min_length=32)
     openai_timeout_seconds: int = Field(default=45, ge=5, le=120)
 

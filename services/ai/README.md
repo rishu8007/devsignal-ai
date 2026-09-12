@@ -50,3 +50,25 @@ embedding-model-specific constraints will be decided later. The chunker
 version is part of each output so changing its rules requires a new version
 and reindexing; the logical chunk IDs are source references and are not
 promised to be usable directly as Qdrant point IDs.
+
+## Embedding provider boundary
+
+`app/providers/embedding_provider.py` defines the typed embedding-provider
+protocol and an OpenAI adapter. It reuses the lifespan-managed `AsyncOpenAI`
+client and preserves the original input order using response `index` values.
+It validates completeness, uniqueness, range, dimensions, finite numeric
+values, and input bounds without truncating text.
+
+The default embedding configuration is:
+
+- `OPENAI_EMBEDDING_MODEL=text-embedding-3-small`
+- `OPENAI_EMBEDDING_DIMENSIONS=1536`
+- maximum batch size: 64 texts;
+- maximum text size: 1,000 Unicode code points per text;
+- maximum batch size: 32,000 Unicode code points.
+
+The model and dimensions are configured independently from the generation
+`OPENAI_MODEL`. These limits are character-based safety bounds; the provider
+does not silently truncate input. Provider failures are converted to safe
+internal error kinds, and the existing SDK retry policy remains the only retry
+layer.

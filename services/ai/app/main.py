@@ -12,6 +12,7 @@ from openai import AsyncOpenAI
 from app.api.router import router
 from app.config import get_settings
 from app.errors import ApplicationError
+from app.providers.embedding_provider import EmbeddingsAPI, OpenAIEmbeddingProvider
 from app.providers.openai_provider import OpenAIProvider, ResponsesAPI
 
 logger = logging.getLogger("devsignal-ai-service")
@@ -30,6 +31,11 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
         cast(ResponsesAPI, client.responses),
         client.close,
         settings.openai_model,
+    )
+    application.state.embedding_provider = OpenAIEmbeddingProvider(
+        cast(EmbeddingsAPI, client.embeddings),
+        settings.openai_embedding_model,
+        settings.openai_embedding_dimensions,
     )
     logger.info("DevSignal AI service started")
     try:

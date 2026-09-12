@@ -1,5 +1,6 @@
 import type { DraftStatus } from "@/lib/api/generation-client";
 import type { DraftLibraryResponse, PublicDraftLibraryItem } from "@/lib/api/draft-client";
+import { CopyDraftButton } from "@/components/dashboard/copy-draft-button";
 
 type DraftFilter = "all" | DraftStatus;
 
@@ -119,6 +120,9 @@ function DraftLibraryCard({ draft, onOpen }: { draft: PublicDraftLibraryItem; on
       <button type="button" onClick={() => onOpen(draft)} className="mt-4 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white">
         Open in Draft Studio
       </button>
+      <div className="mt-3">
+        <CopyDraftButton content={draft.content} />
+      </div>
     </article>
   );
 }

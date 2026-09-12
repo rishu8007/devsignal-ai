@@ -4,6 +4,7 @@ import type {
   PublicGeneration,
   PublicDraft,
 } from "@/lib/api/generation-client";
+import { CopyDraftButton } from "@/components/dashboard/copy-draft-button";
 
 interface DraftStudioProps {
   signalTopic: string | null;
@@ -205,6 +206,10 @@ export function DraftStudio({
                           {mutationPending ? "Approving..." : "Approve"}
                         </button>
                       )}
+                      <CopyDraftButton
+                        content={variation.content}
+                        disabled={mutationPending}
+                      />
                     </div>
                     {mutationError && (
                       <p className="mt-3 text-sm text-red-700" role="alert">{mutationError}</p>

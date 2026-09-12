@@ -96,3 +96,26 @@ offsets, text, and embedding model. Search requires an owner ID and always
 adds an owner filter; deletion requires both owner and source filters. This
 adapter does not yet revalidate MongoDB source existence/version, so owner
 filtering alone must not be treated as stale-source protection.
+
+## Source-indexing orchestration
+
+`app/services/source_indexing.py` is a dependency-injected boundary that
+connects the existing chunker, embedding provider, and Qdrant repository. It
+validates the owner/source request, initializes and validates collection
+compatibility before making embedding calls, batches chunks by both provider
+item count and aggregate Unicode code points, validates every embedding batch,
+then writes records only after all embeddings have succeeded.
+
+The returned result contains source/version, chunker version, embedding model,
+dimensions, and indexed chunk count; it never contains vectors or source
+content. Repeated identical input produces the same logical records and
+deterministic repository point IDs. The service does not delete old vectors
+before indexing and does not claim transactional writes: an upsert failure can
+leave partial writes. Callers must perform MongoDB source existence and
+content-version checks before exposing or using retrieved chunks, including
+after a partial or obsolete indexing attempt.
+
+Embedding model identity is stored with each record. Changing models is not
+automatically compatible merely because dimensions match; use a separate
+collection or a controlled rebuild. Retry behavior is also not transactional
+and repeated retries may repeat embedding provider costs.

@@ -9,6 +9,7 @@ import { authRouter } from "./routes/auth.routes.js";
 import { calendarRouter } from "./routes/calendar.routes.js";
 import { draftRouter } from "./routes/draft.routes.js";
 import { healthRouter } from "./routes/health.routes.js";
+import { knowledgeSourceRouter } from "./routes/knowledge-source.routes.js";
 import { signalRouter } from "./routes/signal.routes.js";
 
 export const app = express();
@@ -29,6 +30,7 @@ app.use("/api/v1", healthRouter);
 app.use("/api/v1/auth", authRouter);
 app.use("/api/v1/drafts", draftRouter);
 app.use("/api/v1/calendar", calendarRouter);
+app.use("/api/v1/sources", knowledgeSourceRouter);
 app.use("/api/v1/signals", signalRouter);
 app.use(notFoundMiddleware);
 app.use(errorMiddleware);

@@ -3,8 +3,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiClientError } from "@/lib/api/api-client";
 import {
+  approveGeneration,
   createGeneration,
+  editGeneration,
   getGeneration,
+  type PublicDraft,
   type PublicGeneration,
 } from "@/lib/api/generation-client";
 import { createSignal, listSignals, type PublicSignal, type SignalPayload } from "@/lib/api/signal-client";
@@ -27,6 +30,11 @@ export function DashboardWorkspace() {
   const [generationLoading, setGenerationLoading] = useState(false);
   const [generationError, setGenerationError] = useState<string | null>(null);
   const [generationPending, setGenerationPending] = useState(false);
+  const [mutationPending, setMutationPending] = useState(false);
+  const [mutationError, setMutationError] = useState<string | null>(null);
+  const [mutationUncertain, setMutationUncertain] = useState(false);
+  const [editingVariationId, setEditingVariationId] = useState<string | null>(null);
+  const [editorContent, setEditorContent] = useState("");
   const [generationOutcomeUncertain, setGenerationOutcomeUncertain] = useState(false);
   const requestId = useRef(0);
   const listController = useRef<AbortController | null>(null);
@@ -60,6 +68,10 @@ export function DashboardWorkspace() {
           generationController.current?.abort();
           setGeneration(null);
           setGenerationError(null);
+          setMutationError(null);
+          setMutationUncertain(false);
+          setEditingVariationId(null);
+          setEditorContent("");
           return null;
         }
         return current;
@@ -120,14 +132,18 @@ export function DashboardWorkspace() {
     if (generationPending) return;
     setSelectedSignal(signal);
     setGeneration(null);
+    setEditingVariationId(null);
+    setEditorContent("");
     void loadGeneration(signal);
   }, [generationPending, loadGeneration]);
 
   const handleGenerate = useCallback(async () => {
-    if (!selectedSignal || generationPending) return;
+    if (!selectedSignal || generationPending || mutationPending) return;
     setGenerationPending(true);
     setGenerationError(null);
     setGenerationOutcomeUncertain(false);
+    setMutationError(null);
+    setMutationUncertain(false);
     try {
       const result = await createGeneration(selectedSignal.id);
       if (!mounted.current) return;
@@ -154,7 +170,125 @@ export function DashboardWorkspace() {
     } finally {
       if (mounted.current) setGenerationPending(false);
     }
-  }, [generationPending, invalidateSession, selectedSignal]);
+  }, [generationPending, invalidateSession, mutationPending, selectedSignal]);
+
+  const handleStartEditing = useCallback((variation: PublicDraft) => {
+    if (mutationPending || editingVariationId !== null) return;
+    setEditingVariationId(variation.id);
+    setEditorContent(variation.content);
+    setMutationError(null);
+    setMutationUncertain(false);
+  }, [editingVariationId, mutationPending]);
+
+  const handleCancelEditing = useCallback(() => {
+    if (mutationPending) return;
+    setEditingVariationId(null);
+    setEditorContent("");
+    setMutationError(null);
+    setMutationUncertain(false);
+  }, [mutationPending]);
+
+  const handleSaveEditing = useCallback(async () => {
+    if (
+      !selectedSignal ||
+      !generation ||
+      !editingVariationId ||
+      mutationPending ||
+      editorContent === generation.variations.find((variation) => variation.id === editingVariationId)?.content
+    ) {
+      return;
+    }
+    if (editorContent.trim().length < 100 || editorContent.trim().length > 3000) return;
+
+    generationRequestId.current += 1;
+    generationController.current?.abort();
+    setMutationPending(true);
+    setMutationError(null);
+    setMutationUncertain(false);
+    try {
+      const result = await editGeneration(selectedSignal.id, editingVariationId, editorContent);
+      if (!mounted.current) return;
+      setGeneration(result);
+      setEditingVariationId(null);
+      setEditorContent("");
+    } catch (error: unknown) {
+      if (!mounted.current) return;
+      if (error instanceof ApiClientError && error.code === "AUTHENTICATION_REQUIRED") {
+        invalidateSession();
+      } else if (
+        error instanceof ApiClientError &&
+        ["REQUEST_TIMEOUT", "NETWORK_ERROR"].includes(error.code)
+      ) {
+        setMutationUncertain(true);
+        setMutationError("The edit may still be processing. Check for saved drafts before trying again.");
+      } else if (error instanceof ApiClientError && error.code === "VALIDATION_ERROR") {
+        setMutationError("Enter between 100 and 3000 trimmed characters.");
+      } else if (error instanceof ApiClientError && error.code === "SIGNAL_NOT_FOUND") {
+        setSelectedSignal(null);
+        setGeneration(null);
+        setEditingVariationId(null);
+        setEditorContent("");
+        setMutationError("This Signal is no longer available.");
+      } else if (error instanceof ApiClientError && error.code === "GENERATION_NOT_FOUND") {
+        setGeneration(null);
+        setEditingVariationId(null);
+        setEditorContent("");
+        setMutationError("No drafts exist for this Signal.");
+      } else if (error instanceof ApiClientError && error.code === "VARIATION_NOT_FOUND") {
+        setMutationError("This draft is no longer available.");
+      } else {
+        setMutationError("Unable to save this edit. Please try again.");
+      }
+    } finally {
+      if (mounted.current) setMutationPending(false);
+    }
+  }, [
+    editingVariationId,
+    editorContent,
+    generation,
+    invalidateSession,
+    mutationPending,
+    selectedSignal,
+  ]);
+
+  const handleApprove = useCallback(async (variationId: string) => {
+    if (!selectedSignal || !generation || mutationPending || editingVariationId !== null) return;
+
+    generationRequestId.current += 1;
+    generationController.current?.abort();
+    setMutationPending(true);
+    setMutationError(null);
+    setMutationUncertain(false);
+    try {
+      const result = await approveGeneration(selectedSignal.id, variationId);
+      if (!mounted.current) return;
+      setGeneration(result);
+    } catch (error: unknown) {
+      if (!mounted.current) return;
+      if (error instanceof ApiClientError && error.code === "AUTHENTICATION_REQUIRED") {
+        invalidateSession();
+      } else if (
+        error instanceof ApiClientError &&
+        ["REQUEST_TIMEOUT", "NETWORK_ERROR"].includes(error.code)
+      ) {
+        setMutationUncertain(true);
+        setMutationError("Approval may still be processing. Check for saved drafts before trying again.");
+      } else if (error instanceof ApiClientError && error.code === "SIGNAL_NOT_FOUND") {
+        setSelectedSignal(null);
+        setGeneration(null);
+        setMutationError("This Signal is no longer available.");
+      } else if (error instanceof ApiClientError && error.code === "GENERATION_NOT_FOUND") {
+        setGeneration(null);
+        setMutationError("No drafts exist for this Signal.");
+      } else if (error instanceof ApiClientError && error.code === "VARIATION_NOT_FOUND") {
+        setMutationError("This draft is no longer available.");
+      } else {
+        setMutationError("Unable to approve this draft. Please try again.");
+      }
+    } finally {
+      if (mounted.current) setMutationPending(false);
+    }
+  }, [editingVariationId, generation, invalidateSession, mutationPending, selectedSignal]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => void loadSignals(), 0);
@@ -193,17 +327,32 @@ export function DashboardWorkspace() {
         onRetry={() => void loadSignals()}
         selectedSignalId={selectedSignal?.id ?? null}
         onSelectSignal={handleSelectSignal}
-        selectionDisabled={generationPending}
+         selectionDisabled={generationPending || mutationPending || editingVariationId !== null}
       />
       <DraftStudio
         signalTopic={selectedSignal?.topic ?? null}
         generation={generation}
         loading={generationLoading}
         generating={generationPending}
-        error={generationError}
-        uncertain={generationOutcomeUncertain}
+        mutationPending={mutationPending}
+        error={generationError ?? (mutationUncertain ? mutationError : null)}
+        uncertain={generationOutcomeUncertain || mutationUncertain}
+        mutationError={mutationError}
+        editingVariationId={editingVariationId}
+        editorContent={editorContent}
+        onEditorContentChange={setEditorContent}
+        onStartEditing={handleStartEditing}
+        onCancelEditing={handleCancelEditing}
+        onSaveEditing={() => void handleSaveEditing()}
+        onApprove={(variationId) => void handleApprove(variationId)}
         onGenerate={() => void handleGenerate()}
-        onRetry={() => selectedSignal && void loadGeneration(selectedSignal)}
+        onRetry={() => {
+          if (selectedSignal) {
+            setMutationError(null);
+            setMutationUncertain(false);
+            void loadGeneration(selectedSignal);
+          }
+        }}
       />
     </>
   );

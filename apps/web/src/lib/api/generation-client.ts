@@ -4,7 +4,7 @@ import { request } from "@/lib/api/api-client";
 import type { PublicSignal } from "@/lib/api/signal-client";
 
 export type GenerationAngle = "technical_depth" | "learning_story" | "professional_impact";
-export type DraftStatus = "draft";
+export type DraftStatus = "draft" | "approved";
 
 export interface PublicDraft {
   id: string;
@@ -59,7 +59,7 @@ function isGeneration(value: unknown): value is PublicGeneration {
         typeof variation.content === "string" &&
         variation.content.trim().length >= 100 &&
         variation.content.trim().length <= 3000 &&
-        variation.status === "draft" &&
+        (variation.status === "draft" || variation.status === "approved") &&
         !angles.has(variation.angle) &&
         angles.add(variation.angle)
       );
@@ -91,6 +91,29 @@ export function getGeneration(
 export function createGeneration(signalId: string): Promise<PublicGeneration> {
   return request(
     `/signals/${encodeURIComponent(signalId)}/generations`,
+    { method: "POST", body: "{}", timeoutMs: 160_000 },
+    isGenerationResponse,
+  ).then((response) => response.data.generation);
+}
+
+export function editGeneration(
+  signalId: string,
+  variationId: string,
+  content: string,
+): Promise<PublicGeneration> {
+  return request(
+    `/signals/${encodeURIComponent(signalId)}/generations/${encodeURIComponent(variationId)}`,
+    { method: "PATCH", body: JSON.stringify({ content }), timeoutMs: 160_000 },
+    isGenerationResponse,
+  ).then((response) => response.data.generation);
+}
+
+export function approveGeneration(
+  signalId: string,
+  variationId: string,
+): Promise<PublicGeneration> {
+  return request(
+    `/signals/${encodeURIComponent(signalId)}/generations/${encodeURIComponent(variationId)}/approve`,
     { method: "POST", body: "{}", timeoutMs: 160_000 },
     isGenerationResponse,
   ).then((response) => response.data.generation);

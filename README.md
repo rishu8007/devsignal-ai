@@ -70,6 +70,18 @@ docker compose up -d mongo
 docker compose ps
 ```
 
+The API's `MONGODB_URI` must use the same username and password as the root
+Compose variables. The tracked API example demonstrates the local shape:
+`mongodb://<username>:<password>@127.0.0.1:27017/devsignal?authSource=admin`.
+`authSource=admin` is required because Compose creates the root user in
+MongoDB's `admin` authentication database, even though the application
+database is `devsignal`. If a username or password contains reserved URI
+characters such as `@`, `:`, `/`, `?`, or `#`, percent-encode that credential
+before placing it in `MONGODB_URI`; do not copy the raw value into the URI.
+The MongoDB initialization credentials apply when the data volume is first
+created. Changing the root `.env` later does not rotate an existing database
+user.
+
 Start each service in a separate PowerShell terminal from the repository root:
 
 ```powershell
@@ -158,4 +170,6 @@ workflow result is distinct from these local checks.
   distributed coordination is a future deployment concern.
 
 See [services/api/README.md](services/api/README.md) and
-[services/ai/README.md](services/ai/README.md) for service-specific details.
+[services/ai/README.md](services/ai/README.md) for service-specific details,
+and follow the [MVP demo guide](docs/demo-guide.md) for a short end-to-end
+walkthrough.

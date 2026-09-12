@@ -1,57 +1,36 @@
-# DevSignal AI Service
+# DevSignal AI service
 
-## Local setup
+The FastAPI service owns prompt construction, the OpenAI provider boundary,
+structured output validation, and safe AI error handling. It listens on port
+`8000` by default.
+
+For fresh-clone setup, environment variables, matching internal keys, service
+URLs, and the complete verification checklist, see the
+[root README](../../README.md).
+
+## Local commands
+
+Create the environment from the repository root, then run the service:
 
 ```powershell
 py -3.14 -m venv services\ai\.venv
-& services\ai\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-python -m pip install -e "services\ai[dev]"
+& services\ai\.venv\Scripts\python.exe -m pip install -e "services\ai[dev]"
+& services\ai\.venv\Scripts\python.exe -m uvicorn app.main:app --app-dir services\ai --reload
 ```
 
-Copy `.env.example` to a private `services\ai\.env` and replace every
-placeholder. Required settings include `OPENAI_API_KEY` and
-`INTERNAL_API_KEY` (at least 32 characters). The configured default model in
-`.env.example` is `gpt-5.6-luna`; the response reports the model returned by
-the provider. Never commit or share secrets.
-
-## Generation endpoint
-
-The internal generation endpoint requires:
-
-```text
-X-Internal-API-Key: <the INTERNAL_API_KEY value>
-```
-
-Example request:
+Quality checks:
 
 ```powershell
-$headers = @{ "X-Internal-API-Key" = "your-private-internal-key" }
-$body = @{
-  topic = "Connecting my Next.js dashboard to an authenticated API"
-  notes = "I connected the dashboard form to an authenticated Express API and verified the flow."
-  primaryAudience = "Developers & engineers"
-  contentType = "Build in public"
-} | ConvertTo-Json
-Invoke-WebRequest http://127.0.0.1:8000/api/v1/generations -Method Post -Headers $headers -Body $body -ContentType "application/json"
+Set-Location services\ai
+& .venv\Scripts\python.exe -m ruff check .
+& .venv\Scripts\python.exe -m ruff format --check .
+& .venv\Scripts\python.exe -m mypy app
+& .venv\Scripts\python.exe -m pytest
 ```
 
-Automated tests use a fake provider and never call OpenAI. Structured
-validation checks response shape, angles and lengths; it cannot prove factual
-accuracy. Generated drafts must be reviewed by a human before publication.
-
-## Quality checks
-
-```powershell
-ruff check services\ai
-ruff format --check services\ai
-mypy services\ai\app
-pytest services\ai\tests
-```
-
-## Run locally
-
-```powershell
-uvicorn app.main:app --app-dir services\ai --reload
-Invoke-WebRequest http://127.0.0.1:8000/api/v1/health
-```
+The service requires `OPENAI_API_KEY`, `OPENAI_MODEL`, and an
+`INTERNAL_API_KEY` of at least 32 characters. The API's
+`AI_INTERNAL_API_KEY` must be identical to this internal key. The tracked
+example defaults to model `gpt-5.6-luna`. Tests use a fake provider and do
+not call OpenAI; live generation requires an OpenAI key and may incur usage
+costs. Generated claims still require human review.

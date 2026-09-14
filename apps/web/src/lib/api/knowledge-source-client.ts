@@ -150,3 +150,14 @@ export function deleteKnowledgeSource(sourceId: string): Promise<void> {
     isKnowledgeSourceDeleteResponse,
   ).then(() => undefined);
 }
+
+export function indexKnowledgeSource(
+  sourceId: string,
+  timeoutMs?: number,
+): Promise<PublicKnowledgeSource> {
+  return request(
+    `/sources/${encodeURIComponent(sourceId)}/index`,
+    { method: "POST", body: JSON.stringify({}), timeoutMs },
+    isKnowledgeSourceResponse,
+  ).then((response) => response.data.source);
+}

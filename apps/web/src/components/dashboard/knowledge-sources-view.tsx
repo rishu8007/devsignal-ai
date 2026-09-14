@@ -7,6 +7,7 @@ import {
   createKnowledgeSource,
   deleteKnowledgeSource,
   getKnowledgeSource,
+  indexKnowledgeSource,
   listKnowledgeSources,
   type KnowledgeSourceListResponse,
   type PublicKnowledgeSource,
@@ -45,6 +46,9 @@ export function KnowledgeSourcesView({
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [indexing, setIndexing] = useState(false);
+  const [indexingError, setIndexingError] = useState<string | null>(null);
+  const [indexingConfirm, setIndexingConfirm] = useState(false);
   const listController = useRef<AbortController | null>(null);
   const detailController = useRef<AbortController | null>(null);
   const listRequestId = useRef(0);
@@ -97,6 +101,9 @@ export function KnowledgeSourcesView({
     setSelectedSource(null);
     setDetailError(null);
     setDetailLoading(false);
+    setIndexing(false);
+    setIndexingError(null);
+    setIndexingConfirm(false);
   }, []);
 
   useEffect(() => {
@@ -165,6 +172,7 @@ export function KnowledgeSourcesView({
   }, [loadSources, page]);
 
   const handleViewDetails = useCallback(async (source: PublicKnowledgeSource) => {
+    if (indexing) return;
     const requestNumber = ++detailRequestId.current;
     detailController.current?.abort();
     const controller = new AbortController();
@@ -173,6 +181,8 @@ export function KnowledgeSourcesView({
     setSelectedSource(null);
     setDetailLoading(true);
     setDetailError(null);
+    setIndexingConfirm(false);
+    setIndexingError(null);
     try {
       const result = await getKnowledgeSource(source.id, controller.signal);
       if (!mounted.current || requestNumber !== detailRequestId.current) return;
@@ -197,7 +207,7 @@ export function KnowledgeSourcesView({
         if (detailController.current === controller) detailController.current = null;
       }
     }
-  }, [onAuthenticationExpired, refreshSources]);
+  }, [onAuthenticationExpired, refreshSources, indexing]);
 
   async function handleCreate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -266,6 +276,121 @@ export function KnowledgeSourcesView({
     }
   }
 
+  async function handleIndex() {
+    if (!selectedSource || indexing || deleting) return;
+    const sourceToIndex = selectedSource;
+
+    setIndexing(true);
+    setIndexingError(null);
+    onMutationPendingChange(true);
+
+    listRequestId.current += 1;
+    detailRequestId.current += 1;
+    listController.current?.abort();
+    detailController.current?.abort();
+
+    try {
+      const indexingTimeoutMs = 200_000;
+      const updated = await indexKnowledgeSource(sourceToIndex.id, indexingTimeoutMs);
+      if (!mounted.current) return;
+      setSelectedSource(updated);
+      if (sourceList && sourceList.sources) {
+        const updatedList = {
+          ...sourceList,
+          sources: sourceList.sources.map((s) =>
+            s.id === updated.id ? updated : s,
+          ),
+        };
+        setSourceList(updatedList);
+        listDataRef.current = updatedList;
+      }
+    } catch (error: unknown) {
+      if (!mounted.current) return;
+      setIndexingConfirm(false);
+      if (error instanceof ApiClientError && error.code === "AUTHENTICATION_REQUIRED") {
+        onAuthenticationExpired();
+      } else if (error instanceof ApiClientError && error.code === "SOURCE_NOT_FOUND") {
+        setDetailError("This knowledge source was deleted.");
+        setSelectedSourceId(null);
+        setSelectedSource(null);
+        refreshSources();
+      } else if (error instanceof ApiClientError && error.code === "SOURCE_INDEXING_IN_PROGRESS") {
+        setIndexingError(
+          "Indexing is already in progress. Refresh status to check progress, or retry after the current operation completes.",
+        );
+      } else if (error instanceof ApiClientError && error.code === "SOURCE_INDEXING_STALE") {
+        setIndexingError(
+          "The indexing attempt is no longer current. Refresh status to check the result, then retry if needed.",
+        );
+      } else if (error instanceof ApiClientError && error.code === "REQUEST_TIMEOUT") {
+        setIndexingError(
+          "The indexing request did not complete within the timeout. Refresh status to check if indexing is still in progress.",
+        );
+      } else if (error instanceof ApiClientError && error.code === "NETWORK_ERROR") {
+        setIndexingError(
+          "A network error occurred. Refresh status to check if indexing completed.",
+        );
+      } else if (error instanceof ApiClientError && error.code === "AI_SERVICE_TIMEOUT") {
+        setIndexingError(
+          "The embedding service timed out. Refresh status to check if indexing is still in progress.",
+        );
+      } else if (error instanceof ApiClientError && error.code === "AI_SERVICE_UNAVAILABLE") {
+        setIndexingError(
+          "The embedding service is unavailable. Refresh status to check if indexing completed.",
+        );
+      } else {
+        setIndexingError("Unable to index this knowledge source. Please try again.");
+      }
+    } finally {
+      if (mounted.current) setIndexing(false);
+      onMutationPendingChange(false);
+    }
+  }
+
+  async function handleRefreshStatus() {
+    if (!selectedSource || detailLoading || indexing) return;
+    const sourceId = selectedSource.id;
+
+    setDetailLoading(true);
+    setDetailError(null);
+    setIndexingError(null);
+
+    detailController.current = new AbortController();
+    const requestId = ++detailRequestId.current;
+
+    try {
+      const updated = await getKnowledgeSource(sourceId, detailController.current.signal);
+      if (!mounted.current || requestId !== detailRequestId.current) return;
+      setSelectedSource(updated);
+      if (sourceList && sourceList.sources) {
+        const updatedList = {
+          ...sourceList,
+          sources: sourceList.sources.map((s) =>
+            s.id === updated.id ? updated : s,
+          ),
+        };
+        setSourceList(updatedList);
+        listDataRef.current = updatedList;
+      }
+    } catch (error: unknown) {
+      if (!mounted.current || requestId !== detailRequestId.current) return;
+      if (error instanceof ApiClientError && error.code === "AUTHENTICATION_REQUIRED") {
+        onAuthenticationExpired();
+      } else if (error instanceof ApiClientError && error.code === "SOURCE_NOT_FOUND") {
+        setDetailError("This knowledge source was deleted.");
+        setSelectedSourceId(null);
+        setSelectedSource(null);
+        refreshSources();
+      } else if (error instanceof ApiClientError && error.code === "REQUEST_ABORTED") {
+        return;
+      } else {
+        setDetailError("Unable to refresh status. Please try again.");
+      }
+    } finally {
+      if (mounted.current) setDetailLoading(false);
+    }
+  }
+
   const selectedListItem = useMemo(
     () => sourceList?.sources.find((source) => source.id === selectedSourceId) ?? null,
     [selectedSourceId, sourceList],
@@ -281,8 +406,8 @@ export function KnowledgeSourcesView({
           Knowledge sources
         </h2>
         <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600">
-          Save text notes for future grounded generation. Notes are saved now,
-          but indexing and use in AI generation are not available yet.
+          Save text notes for embedding and indexing. Notes are saved immediately.
+          Indexing prepares your notes for AI use. Grounded generation using indexed notes is not yet connected.
         </p>
 
         <form onSubmit={(event) => void handleCreate(event)} className="mt-6 rounded-xl border border-slate-200 bg-white p-5 shadow-sm" noValidate>
@@ -388,7 +513,7 @@ export function KnowledgeSourcesView({
                   </span>
                 </div>
                 <p className="mt-3 text-sm text-slate-600">
-                  Notes are saved. Indexing and AI use are not available yet.
+                  {source.processingStatus === "indexed" ? "Indexed and ready for use." : "Ready to index for AI use."}
                 </p>
                 <button
                   type="button"
@@ -458,10 +583,96 @@ export function KnowledgeSourcesView({
                 <p className="mt-4 text-xs text-slate-500">
                   Version {selectedSource.contentVersion} · Updated {formatDate(selectedSource.updatedAt)}
                 </p>
+                <div className="mt-4 flex flex-wrap gap-3">
+                  {selectedSource.processingStatus === "pending" && !indexingConfirm && (
+                    <button
+                      type="button"
+                      onClick={() => setIndexingConfirm(true)}
+                      disabled={indexing || deleting}
+                      className="rounded-lg border border-blue-300 bg-white px-4 py-2 text-sm font-semibold text-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Index source
+                    </button>
+                  )}
+                  {selectedSource.processingStatus === "failed" && !indexingConfirm && (
+                    <button
+                      type="button"
+                      onClick={() => setIndexingConfirm(true)}
+                      disabled={indexing || deleting}
+                      className="rounded-lg border border-blue-300 bg-white px-4 py-2 text-sm font-semibold text-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Retry indexing
+                    </button>
+                  )}
+                  {selectedSource.processingStatus === "indexing" && (
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => void handleRefreshStatus()}
+                        disabled={detailLoading}
+                        className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-600 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        Refresh status
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setIndexingConfirm(true)}
+                        disabled={indexing || deleting}
+                        className="rounded-lg border border-blue-300 bg-white px-4 py-2 text-sm font-semibold text-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        Retry indexing
+                      </button>
+                    </div>
+                  )}
+                  {(selectedSource.processingStatus === "pending" || selectedSource.processingStatus === "failed" || selectedSource.processingStatus === "indexing") && indexingConfirm && (
+                    <div className="w-full rounded-lg border border-blue-200 bg-blue-50 p-4">
+                      <p className="text-sm text-slate-700">
+                        <span className="font-semibold">Important:</span> This sends your note to the configured
+                        embedding provider and may incur usage costs. Retrying may incur additional costs.
+                      </p>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => void handleIndex()}
+                          disabled={indexing || deleting}
+                          className="rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {indexing ? "Indexing..." : "Confirm and index"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setIndexingConfirm(false)}
+                          disabled={indexing}
+                          className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-600 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  {selectedSource.processingStatus === "indexed" && (
+                    <p className="text-sm text-teal-700">
+                      ✓ Indexed. Use in draft generation is not connected yet.
+                    </p>
+                  )}
+                  {indexingError && (
+                    <div className="w-full rounded-lg border border-amber-200 bg-amber-50 p-3">
+                      <p className="text-sm text-amber-800">{indexingError}</p>
+                      <button
+                        type="button"
+                        onClick={() => void handleRefreshStatus()}
+                        disabled={detailLoading}
+                        className="mt-2 text-sm font-semibold text-amber-900 underline"
+                      >
+                        Refresh status
+                      </button>
+                    </div>
+                  )}
+                </div>
                 <button
                   type="button"
                   onClick={() => void handleDelete()}
-                  disabled={deleting}
+                  disabled={deleting || indexing}
                   className="mt-4 rounded-lg border border-red-300 bg-white px-4 py-2 text-sm font-semibold text-red-700 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {deleting ? "Deleting..." : `Delete "${selectedSource.title}"`}

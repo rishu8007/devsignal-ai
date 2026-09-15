@@ -16,9 +16,11 @@ export interface PublicSignal {
   contentType: ContentType;
   createdAt: string;
   updatedAt: string;
+  revision: number;
 }
 
-export type SignalPayload = Omit<PublicSignal, "id" | "createdAt" | "updatedAt">;
+export type SignalPayload = Omit<PublicSignal, "id" | "createdAt" | "updatedAt" | "revision">;
+export type SignalUpdatePayload = SignalPayload & { expectedRevision: number };
 
 export interface SignalListResponse {
   signals: PublicSignal[];
@@ -61,7 +63,10 @@ function isPublicSignal(value: unknown): value is PublicSignal {
     isPrimaryAudience(value.primaryAudience) &&
     isContentType(value.contentType) &&
     typeof value.createdAt === "string" &&
-    typeof value.updatedAt === "string"
+    typeof value.updatedAt === "string" &&
+    typeof value.revision === "number" &&
+    Number.isInteger(value.revision) &&
+    value.revision > 0
   );
 }
 
@@ -92,6 +97,18 @@ export async function createSignal(payload: SignalPayload): Promise<PublicSignal
   const response = await request(
     "/signals",
     { method: "POST", body: JSON.stringify(payload) },
+    isSignalResponse,
+  );
+  return response.data.signal;
+}
+
+export async function updateSignal(
+  signalId: string,
+  payload: SignalUpdatePayload,
+): Promise<PublicSignal> {
+  const response = await request(
+    `/signals/${encodeURIComponent(signalId)}`,
+    { method: "PATCH", body: JSON.stringify(payload) },
     isSignalResponse,
   );
   return response.data.signal;

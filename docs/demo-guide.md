@@ -55,6 +55,11 @@ the Signal, then select **Use my knowledge notes** in Draft Studio and choose
 **Generate three drafts**. This makes one new Generation using indexed notes as
 supporting context and may incur retrieval and provider costs.
 
+Before generating drafts, use **Edit Signal** beside a saved Signal to correct
+its topic, notes, audience, or content type. Saving uses optimistic
+concurrency protection and does not change existing drafts; once a Generation
+exists, the Signal is no longer editable.
+
 If a Generation already exists, opening it loads the saved result. Generations
 are reused; selecting the knowledge option does not regenerate an existing
 Generation.

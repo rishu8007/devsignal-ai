@@ -12,11 +12,18 @@ import {
   type PublicDraft,
   type PublicGeneration,
 } from "@/lib/api/generation-client";
-import { createSignal, listSignals, type PublicSignal, type SignalPayload } from "@/lib/api/signal-client";
+import {
+  createSignal,
+  listSignals,
+  updateSignal,
+  type PublicSignal,
+  type SignalPayload,
+  type SignalUpdatePayload,
+} from "@/lib/api/signal-client";
 import { listDrafts, type DraftLibraryResponse, type PublicDraftLibraryItem } from "@/lib/api/draft-client";
 import { useAuth } from "@/components/auth/auth-provider";
 import { DraftStudio } from "@/components/dashboard/draft-studio";
-import { NewSignalForm } from "@/components/dashboard/new-signal-form";
+import { EditSignalForm, NewSignalForm } from "@/components/dashboard/new-signal-form";
 import { RecentSignals } from "@/components/dashboard/recent-signals";
 import { WorkspaceNavigation } from "@/components/dashboard/workspace-navigation";
 import { type WorkspaceTab } from "@/components/dashboard/workspace-navigation";
@@ -34,6 +41,9 @@ export function DashboardWorkspace() {
   const [listError, setListError] = useState<string | null>(null);
   const [createPending, setCreatePending] = useState(false);
   const [selectedSignal, setSelectedSignal] = useState<PublicSignal | null>(null);
+  const [editingSignal, setEditingSignal] = useState<PublicSignal | null>(null);
+  const [signalEditPending, setSignalEditPending] = useState(false);
+  const [signalDirty, setSignalDirty] = useState(false);
   const [generation, setGeneration] = useState<PublicGeneration | null>(null);
   const [generationLoading, setGenerationLoading] = useState(false);
   const [generationError, setGenerationError] = useState<string | null>(null);
@@ -233,6 +243,9 @@ export function DashboardWorkspace() {
         setGeneration(null);
       } else if (error instanceof ApiClientError && error.code === "SIGNAL_NOT_FOUND") {
         setSelectedSignal(null);
+        setEditingSignal(null);
+        setSignalDirty(false);
+        setSignalEditPending(false);
         setGeneration(null);
         setGenerationError("This Signal is no longer available.");
       } else {
@@ -247,14 +260,56 @@ export function DashboardWorkspace() {
   }, [invalidateSession]);
 
   const handleSelectSignal = useCallback((signal: PublicSignal) => {
-    if (generationPending || mutationPending || editingVariationId !== null) return;
+    if (
+      generationPending ||
+      mutationPending ||
+      editingVariationId !== null ||
+      (signalDirty &&
+        !window.confirm("You have unsaved Signal edits. Leave this editor?"))
+    ) return;
+    setEditingSignal(null);
+    setSignalDirty(false);
     setSelectedSignal(signal);
     setGeneration(null);
     setUseKnowledge(false);
     setEditingVariationId(null);
     setEditorContent("");
     void loadGeneration(signal);
-  }, [editingVariationId, generationPending, loadGeneration, mutationPending]);
+  }, [editingVariationId, generationPending, loadGeneration, mutationPending, signalDirty]);
+
+  const handleStartSignalEditing = useCallback((signal: PublicSignal) => {
+    if (generationPending || mutationPending || editingVariationId !== null) return;
+    if (selectedSignal?.id === signal.id && generation !== null) return;
+    setEditingSignal(signal);
+    setSignalDirty(false);
+  }, [editingVariationId, generation, generationPending, mutationPending, selectedSignal?.id]);
+
+  const handleSaveSignal = useCallback(async (
+    payload: SignalUpdatePayload,
+  ): Promise<boolean> => {
+    if (!editingSignal || signalEditPending) return false;
+    setSignalEditPending(true);
+    try {
+      const updated = await updateSignal(editingSignal.id, payload);
+      if (!mounted.current) return false;
+      setSignals((current) => current.map((signal) => signal.id === updated.id ? updated : signal));
+      if (selectedSignal?.id === updated.id) {
+        setSelectedSignal(updated);
+        setGeneration(null);
+        setUseKnowledge(false);
+      }
+      setEditingSignal(null);
+      setSignalDirty(false);
+      return true;
+    } catch (error: unknown) {
+      if (error instanceof ApiClientError && error.code === "AUTHENTICATION_REQUIRED") {
+        invalidateSession();
+      }
+      throw error;
+    } finally {
+      if (mounted.current) setSignalEditPending(false);
+    }
+  }, [editingSignal, invalidateSession, selectedSignal, signalEditPending]);
 
   const handleGenerate = useCallback(async () => {
     if (!selectedSignal || generation || generationPending || mutationPending) return;
@@ -589,8 +644,16 @@ export function DashboardWorkspace() {
     ) {
       return;
     }
+    if (
+      activeTab === "create" &&
+      tab !== "create" &&
+      signalDirty &&
+      !window.confirm("You have unsaved Signal edits. Leave this tab? Your input will be preserved.")
+    ) {
+      return;
+    }
     setActiveTab(tab);
-  }, [activeTab, knowledgeDirty]);
+  }, [activeTab, knowledgeDirty, signalDirty]);
 
   return (
     <>
@@ -602,11 +665,25 @@ export function DashboardWorkspace() {
       <WorkspaceNavigation
         activeTab={activeTab}
         onChange={handleWorkspaceTabChange}
-        disabled={mutationPending || editingVariationId !== null || knowledgeMutationPending}
+        disabled={mutationPending || editingVariationId !== null || knowledgeMutationPending || signalEditPending}
       />
       {activeTab === "create" && (
         <>
           <NewSignalForm onCreate={handleCreate} pending={createPending || listLoading} />
+          {editingSignal && (
+            <EditSignalForm
+              key={`${editingSignal.id}-${editingSignal.revision}`}
+              signal={editingSignal}
+              pending={signalEditPending}
+              onSave={handleSaveSignal}
+              onCancel={() => {
+                if (signalEditPending) return;
+                setEditingSignal(null);
+                setSignalDirty(false);
+              }}
+              onDirtyChange={setSignalDirty}
+            />
+          )}
           <RecentSignals
         signals={signals}
         loading={listLoading}
@@ -615,6 +692,11 @@ export function DashboardWorkspace() {
         onRetry={() => void loadSignals()}
         selectedSignalId={selectedSignal?.id ?? null}
         onSelectSignal={handleSelectSignal}
+        onEditSignal={handleStartSignalEditing}
+        editDisabled={(signal) =>
+          selectedSignal?.id === signal.id &&
+          (generation !== null || generationLoading || generationPending)
+        }
          selectionDisabled={generationPending || mutationPending || editingVariationId !== null}
           />
           <DraftStudio

@@ -31,6 +31,12 @@ export const createSignalSchema = z
 
 export type CreateSignalInput = z.infer<typeof createSignalSchema>;
 
+export const updateSignalSchema = createSignalSchema.extend({
+  expectedRevision: z.number().int().positive(),
+}).strict();
+
+export type UpdateSignalInput = z.infer<typeof updateSignalSchema>;
+
 export const listSignalsQuerySchema = z
   .object({
     page: z.coerce.number().int().positive("Page must be a positive integer").default(1),
@@ -44,3 +50,7 @@ export const listSignalsQuerySchema = z
   .strict();
 
 export type ListSignalsQuery = z.infer<typeof listSignalsQuerySchema>;
+
+export const signalParamsSchema = z
+  .object({ signalId: z.string().regex(/^[a-f\d]{24}$/i, "Signal ID must be a valid identifier") })
+  .strict();

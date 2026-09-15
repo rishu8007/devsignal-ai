@@ -40,6 +40,33 @@ const signalSchema = new Schema(
       required: true,
       enum: SIGNAL_CONTENT_TYPES,
     },
+    revision: {
+      type: Number,
+      required: true,
+      default: 1,
+      min: 1,
+    },
+    generationId: {
+      type: Schema.Types.ObjectId,
+      default: null,
+      select: false,
+    },
+    generationLeaseId: {
+      type: String,
+      default: null,
+      select: false,
+    },
+    generationLeaseExpiresAt: {
+      type: Date,
+      default: null,
+      select: false,
+    },
+    generationLeaseState: {
+      type: String,
+      enum: ["generating", "persisting"],
+      default: null,
+      select: false,
+    },
   },
   {
     timestamps: true,

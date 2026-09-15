@@ -1,4 +1,5 @@
 import { Types } from "mongoose";
+import { randomUUID } from "node:crypto";
 import { aiServiceClient, type AiGenerationClient } from "../clients/ai-service.client.js";
 import { AppError } from "../errors/app-error.js";
 import type { GenerationDocument } from "../models/generation.model.js";
@@ -9,7 +10,15 @@ import {
   scheduleGenerationVariation,
   clearGenerationVariationSchedule,
 } from "../repositories/generation.repository.js";
-import { findSignalByIdAndOwner } from "../repositories/signal.repository.js";
+import {
+  findSignalByIdAndOwner,
+  markSignalGeneration,
+  releaseSignalGenerationLease,
+  reserveSignalForGeneration,
+  hasActiveSignalGenerationLease,
+  beginSignalGenerationPersistence,
+  reconcileSignalGeneration,
+} from "../repositories/signal.repository.js";
 import {
   searchKnowledgeSourcesForUser,
   type PublicRetrievalCandidate,
@@ -49,6 +58,12 @@ export interface GenerationRepositoryBoundary {
   updateGenerationVariation: typeof updateGenerationVariation;
   scheduleGenerationVariation: typeof scheduleGenerationVariation;
   clearGenerationVariationSchedule: typeof clearGenerationVariationSchedule;
+  reserveSignalForGeneration?: typeof reserveSignalForGeneration;
+  markSignalGeneration?: typeof markSignalGeneration;
+  releaseSignalGenerationLease?: typeof releaseSignalGenerationLease;
+  hasActiveSignalGenerationLease?: typeof hasActiveSignalGenerationLease;
+  beginSignalGenerationPersistence?: typeof beginSignalGenerationPersistence;
+  reconcileSignalGeneration?: typeof reconcileSignalGeneration;
 }
 
 const defaultRepository: GenerationRepositoryBoundary = {
@@ -58,6 +73,12 @@ const defaultRepository: GenerationRepositoryBoundary = {
   updateGenerationVariation,
   scheduleGenerationVariation,
   clearGenerationVariationSchedule,
+  reserveSignalForGeneration,
+  markSignalGeneration,
+  releaseSignalGenerationLease,
+  hasActiveSignalGenerationLease,
+  beginSignalGenerationPersistence,
+  reconcileSignalGeneration,
 };
 
 export interface GenerationOperationResult {
@@ -72,6 +93,7 @@ export async function createGenerationForSignal(
   aiClient: AiGenerationClient = aiServiceClient,
   repository: GenerationRepositoryBoundary = defaultRepository,
   retrieval: RetrievalBoundary = defaultRetrievalBoundary,
+  clock: () => Date = () => new Date(),
 ): Promise<GenerationOperationResult> {
   const signal = await findSignalByOwner(ownerId, signalId, repository);
   // The existing-Generation check always happens before any retrieval or provider call,
@@ -79,6 +101,7 @@ export async function createGenerationForSignal(
   // retrieval or paid AI calls.
   const existing = await repository.findGenerationByOwnerAndSignal(ownerId, signalId);
   if (existing) {
+    await reconcileSignalProtection(ownerId, signalId, null, existing, repository);
     return { generation: toPublicGenerationDto(existing), created: false };
   }
 
@@ -88,19 +111,58 @@ export async function createGenerationForSignal(
     return current;
   }
 
+  const leaseId = randomUUID();
+  const reservedSignal = repository.reserveSignalForGeneration
+    ? await repository.reserveSignalForGeneration(
+        ownerId,
+        signalId,
+        leaseId,
+        new Date(clock().getTime() + 240_000),
+      )
+    : signal;
+  if (!reservedSignal) {
+    const concurrentGeneration = await repository.findGenerationByOwnerAndSignal(ownerId, signalId);
+    if (concurrentGeneration) {
+      await reconcileSignalProtection(ownerId, signalId, null, concurrentGeneration, repository);
+      return { generation: toPublicGenerationDto(concurrentGeneration), created: false };
+    }
+    throw new AppError(
+      409,
+      "SIGNAL_GENERATION_IN_PROGRESS",
+      "This Signal is currently being used to generate drafts",
+    );
+  }
+
   const operation = generateAndPersist(
     ownerId,
     signalId,
-    signal,
+    reservedSignal,
     useKnowledge,
     aiClient,
     repository,
     retrieval,
+    repository.reserveSignalForGeneration ? leaseId : null,
+    clock,
   );
   inFlight.set(key, operation);
+  let generationCommitted = false;
+  let operationError: unknown;
   try {
-    return await operation;
+    const result = await operation;
+    generationCommitted = true;
+    return result;
+  } catch (error: unknown) {
+    operationError = error;
+    throw error;
   } finally {
+    if (
+      !generationCommitted &&
+      !(operationError instanceof UncertainGenerationWriteError) &&
+      repository.releaseSignalGenerationLease &&
+      repository.reserveSignalForGeneration
+    ) {
+      await repository.releaseSignalGenerationLease(ownerId, signalId, leaseId);
+    }
     if (inFlight.get(key) === operation) {
       inFlight.delete(key);
     }
@@ -227,6 +289,8 @@ async function generateAndPersist(
   aiClient: AiGenerationClient,
   repository: GenerationRepositoryBoundary,
   retrieval: RetrievalBoundary,
+  leaseId: string | null,
+  clock: () => Date,
 ): Promise<GenerationOperationResult> {
   const source: GenerationSource = {
     topic: signal.topic,
@@ -262,17 +326,89 @@ async function generateAndPersist(
   const rawResult = await aiClient.generate(source, contextChunks);
   const result = normalizeAiGenerationResult(rawResult, useKnowledge, candidatesByChunkId);
 
+  if (leaseId && repository.beginSignalGenerationPersistence) {
+    const persisting = await repository.beginSignalGenerationPersistence(
+      ownerId,
+      signalId,
+      signal.revision ?? 1,
+      leaseId,
+      clock(),
+    );
+    if (!persisting) {
+      throw new AppError(
+        409,
+        "SIGNAL_GENERATION_IN_PROGRESS",
+        "The generation reservation expired or was superseded before drafts could be saved",
+      );
+    }
+  } else if (
+    leaseId &&
+    repository.hasActiveSignalGenerationLease &&
+    !(await repository.hasActiveSignalGenerationLease(ownerId, signalId, leaseId, clock()))
+  ) {
+    throw new AppError(
+      409,
+      "SIGNAL_GENERATION_IN_PROGRESS",
+      "The generation reservation expired before drafts could be saved",
+    );
+  }
+
   try {
     const generation = await repository.createGeneration(ownerId, signalId, source, result);
+    if (leaseId && repository.markSignalGeneration) {
+      const marked = await repository.markSignalGeneration(
+        ownerId,
+        signalId,
+        leaseId,
+        generation._id.toString(),
+      );
+      if (!marked) {
+        // Keep the lease when the marker cannot be written: the Generation now
+        // exists, so the edit path remains blocked by its existence check.
+        return { generation: toPublicGenerationDto(generation), created: true };
+      }
+    }
     return { generation: toPublicGenerationDto(generation), created: true };
   } catch (error) {
     if (isDuplicateKeyError(error)) {
       const existing = await repository.findGenerationByOwnerAndSignal(ownerId, signalId);
       if (existing) {
+        await reconcileSignalProtection(ownerId, signalId, leaseId, existing, repository);
         return { generation: toPublicGenerationDto(existing), created: false };
       }
     }
-    throw error;
+    const existing = await repository.findGenerationByOwnerAndSignal(ownerId, signalId);
+    if (existing) {
+      await reconcileSignalProtection(ownerId, signalId, leaseId, existing, repository);
+      return { generation: toPublicGenerationDto(existing), created: false };
+    }
+    throw new UncertainGenerationWriteError(error);
+  }
+}
+
+async function reconcileSignalProtection(
+  ownerId: string,
+  signalId: string,
+  leaseId: string | null,
+  generation: GenerationDocument,
+  repository: GenerationRepositoryBoundary,
+): Promise<void> {
+  if (leaseId && repository.markSignalGeneration) {
+    await repository.markSignalGeneration(ownerId, signalId, leaseId, generation._id.toString());
+  } else if (repository.reconcileSignalGeneration) {
+    await repository.reconcileSignalGeneration(ownerId, signalId, generation._id.toString());
+  }
+}
+
+class UncertainGenerationWriteError extends AppError {
+  constructor(cause: unknown) {
+    super(
+      409,
+      "GENERATION_PERSISTENCE_UNCERTAIN",
+      "Generation persistence is unresolved; retry status reconciliation before editing this Signal",
+    );
+    this.name = "UncertainGenerationWriteError";
+    void cause;
   }
 }
 

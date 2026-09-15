@@ -10,6 +10,8 @@ interface RecentSignalsProps {
   onRetry: () => void;
   selectedSignalId: string | null;
   onSelectSignal: (signal: PublicSignal) => void;
+  onEditSignal: (signal: PublicSignal) => void;
+  editDisabled: (signal: PublicSignal) => boolean;
   selectionDisabled: boolean;
 }
 
@@ -21,6 +23,8 @@ export function RecentSignals({
   onRetry,
   selectedSignalId,
   onSelectSignal,
+  onEditSignal,
+  editDisabled,
   selectionDisabled,
 }: RecentSignalsProps) {
   return (
@@ -75,6 +79,14 @@ export function RecentSignals({
                 className="mt-4 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {selectedSignalId === signal.id ? "Selected" : "View drafts"}
+              </button>
+              <button
+                type="button"
+                onClick={() => onEditSignal(signal)}
+                disabled={selectionDisabled || editDisabled(signal)}
+                className="ml-2 mt-4 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Edit Signal
               </button>
             </li>
           ))}

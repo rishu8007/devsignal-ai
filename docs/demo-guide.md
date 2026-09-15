@@ -68,6 +68,25 @@ repository, execute archive contents, import source code, or support PDFs.
 After saving, the existing API, explicit indexing, and embedding-provider
 behavior applies and may incur provider costs.
 
+#### Import text from a PDF
+
+Choose **Import PDF** beside the Knowledge form to process one local PDF with
+the bundled PDF parser. PDF bytes are processed in the browser and are not
+uploaded during extraction. Extraction runs page by page; select the pages
+with usable text, review the plain-text preview and assembled note, edit the
+suggested title, and choose **Import into note**. Saving and indexing remain
+explicit actions.
+
+PDF import accepts files up to 10 MiB, at most 30 pages, and at most 100,000
+extracted characters, with a 30-second extraction timeout. Password-protected,
+corrupt, and image-only PDFs are rejected; OCR is not supported. Mixed PDFs
+identify pages without selectable text. Text order, tables, columns, and
+other layout details may not be reconstructed accurately. The parser does not
+execute PDF actions, JavaScript, attachments, links, or forms and does not
+request external document resources. Review personal or confidential content
+before saving. Once saved, the assembled text follows the existing API,
+indexing, embedding-provider, and grounded-generation behavior.
+
 ### 2. Create a Signal and opt into knowledge
 
 On the **Create** tab, save a Signal with a topic and learning notes. Select

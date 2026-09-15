@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, FormEvent } from "react";
+import { PdfImportPanel } from "./pdf-import-panel";
 import { RepositoryZipImportPanel } from "./repository-zip-import-panel";
 import { ApiClientError } from "@/lib/api/api-client";
 import {
@@ -47,6 +48,7 @@ export function KnowledgeSourcesView({
   const [importLoading, setImportLoading] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
   const [zipImportOpen, setZipImportOpen] = useState(false);
+  const [pdfImportOpen, setPdfImportOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const [sourceList, setSourceList] = useState<KnowledgeSourceListResponse | null>(null);
   const [page, setPage] = useState(1);
@@ -196,6 +198,7 @@ export function KnowledgeSourcesView({
     setImportLoading(false);
     setImportError(null);
     setZipImportOpen(false);
+    setPdfImportOpen(false);
   }, []);
 
   useEffect(() => {
@@ -209,6 +212,7 @@ export function KnowledgeSourcesView({
       if (mounted.current) {
         setImportLoading(false);
         setZipImportOpen(false);
+        setPdfImportOpen(false);
       }
     }, 0);
     return () => window.clearTimeout(timer);
@@ -575,6 +579,40 @@ export function KnowledgeSourcesView({
         (!changedDuringImport &&
           hasCurrentInput &&
           !window.confirm("Replace the current title and content with this import?"))
+      ) {
+        setImportError("Import canceled; your current note input was preserved.");
+        return false;
+      }
+      setTitle(importedTitle.trim());
+      setContent(importedContent);
+      setTouched({ title: false, content: false });
+      setFormError(null);
+      setSuccessMessage(null);
+      setImportError(null);
+      return true;
+    },
+    [active, creating, deleting, editPending, indexing],
+  );
+
+  const handlePdfImport = useCallback(
+    (
+      importedTitle: string,
+      importedContent: string,
+      initialValues: { title: string; content: string },
+    ) => {
+      if (!active || creating || deleting || indexing || editPending) return false;
+      const currentValues = formValuesRef.current;
+      const changedDuringImport =
+        currentValues.title !== initialValues.title || currentValues.content !== initialValues.content;
+      const hasCurrentInput = currentValues.title.length > 0 || currentValues.content.length > 0;
+      if (
+        (changedDuringImport &&
+          !window.confirm(
+            "The note form changed while the PDF was loading. Replace the current title and content with this import?",
+          )) ||
+        (!changedDuringImport &&
+          hasCurrentInput &&
+          !window.confirm("Replace the current title and content with this PDF import?"))
       ) {
         setImportError("Import canceled; your current note input was preserved.");
         return false;
@@ -1025,12 +1063,25 @@ export function KnowledgeSourcesView({
                 type="button"
                 onClick={() => {
                   setImportError(null);
+                  setPdfImportOpen(false);
                   setZipImportOpen(true);
                 }}
                 disabled={creating || deleting || indexing || editPending || importLoading}
                 className="rounded-lg border border-indigo-300 bg-white px-3 py-2 text-sm font-semibold text-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Import repository ZIP
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setImportError(null);
+                  setZipImportOpen(false);
+                  setPdfImportOpen(true);
+                }}
+                disabled={creating || deleting || indexing || editPending || importLoading}
+                className="rounded-lg border border-indigo-300 bg-white px-3 py-2 text-sm font-semibold text-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Import PDF
               </button>
             </div>
           </div>
@@ -1039,11 +1090,20 @@ export function KnowledgeSourcesView({
             Save uploads the note, and indexing remains a separate explicit action.
           </p>
           <RepositoryZipImportPanel
+            key={zipImportOpen ? "open" : "closed"}
             active={zipImportOpen && active}
             disabled={creating || deleting || indexing || editPending}
             formValues={{ title, content }}
             onImport={handleRepositoryZipImport}
             onClose={() => setZipImportOpen(false)}
+          />
+          <PdfImportPanel
+            key={pdfImportOpen ? "open" : "closed"}
+            active={pdfImportOpen && active}
+            disabled={creating || deleting || indexing || editPending}
+            formValues={{ title, content }}
+            onImport={handlePdfImport}
+            onClose={() => setPdfImportOpen(false)}
           />
           <div className="mt-4 space-y-4">
             <div>

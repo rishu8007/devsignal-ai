@@ -6,12 +6,14 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test:imports": "node --import tsx --test test/repository-zip-import.test.ts test/pdf-import.test.ts"
   },
   "dependencies": {
     "@zip.js/zip.js": "2.15.0",
     "lucide-react": "^1.43.0",
     "next": "16.3.4",
+    "pdfjs-dist": "5.4.149",
     "react": "19.2.8",
     "react-dom": "19.2.8"
   },

@@ -189,3 +189,32 @@ with the same command by supplying another results file; this command never
 makes provider calls, database writes, or incurs provider cost. Synthetic
 scores test evaluator correctness, not live retrieval relevance. These
 metrics also do not measure generated factual accuracy or citation faithfulness.
+
+### Adapting recorded Knowledge search responses
+
+The capture adapter converts saved successful `/api/v1/sources/search`
+responses into the evaluator's existing results format. Use a controlled
+benchmark corpus and record an explicit application-source-ID map; titles and
+text are not used for matching. For each benchmark query, explicitly submit
+the query in the authenticated UI and save only the response body. Do not
+export cookies, authorization headers, or a full HAR.
+
+```powershell
+& .venv\Scripts\python.exe -m app.evaluation.capture_cli `
+  --benchmark evaluation\benchmark.json `
+  --captures evaluation\captures.synthetic.json `
+  --mapping evaluation\source-id-map.synthetic.json `
+  --output evaluation\results.recorded.json
+
+& .venv\Scripts\python.exe -m app.evaluation.cli `
+  --benchmark evaluation\benchmark.json `
+  --results evaluation\results.recorded.json
+```
+
+The adapter's `recorded` label describes the input mode, not how the supplied
+responses were authenticated or obtained. Synthetic captures are not a live
+evaluation. Captures are rejected when benchmark notes, versions, queries, or
+source mappings do not match; extra unmapped sources never silently improve
+scores. Querying and indexing can incur provider costs, but the adapter and
+evaluator make no provider calls. Metrics measure source retrieval only, not
+generated factual accuracy.

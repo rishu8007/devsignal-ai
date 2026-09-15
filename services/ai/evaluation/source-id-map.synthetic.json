@@ -1,0 +1,10 @@
+{
+  "schemaVersion": "retrieval-source-map-v1",
+  "mappings": [
+    {"applicationSourceId": "000000000000000000000001", "benchmarkSourceId": "note-indexing"},
+    {"applicationSourceId": "000000000000000000000002", "benchmarkSourceId": "note-authentication"},
+    {"applicationSourceId": "000000000000000000000003", "benchmarkSourceId": "note-approval"},
+    {"applicationSourceId": "000000000000000000000004", "benchmarkSourceId": "note-scheduling"},
+    {"applicationSourceId": "000000000000000000000005", "benchmarkSourceId": "note-versioning"}
+  ]
+}

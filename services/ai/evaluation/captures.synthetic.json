@@ -1,0 +1,60 @@
+{
+  "schemaVersion": "retrieval-captures-v1",
+  "captures": [
+    {
+      "caseId": "indexing-01",
+      "query": "How are notes indexed?",
+      "response": {"success": true, "data": {"candidates": [
+        {"sourceId": "000000000000000000000001", "title": "Synthetic indexing", "contentVersion": 1, "chunkId": "000000000000000000000001_v1_c0", "chunkIndex": 0, "text": "synthetic indexing", "startOffset": 0, "endOffset": 18, "score": 0.91}
+      ]}}
+    },
+    {
+      "caseId": "auth-01",
+      "query": "How does authentication work?",
+      "response": {"success": true, "data": {"candidates": [
+        {"sourceId": "000000000000000000000002", "title": "Synthetic auth", "contentVersion": 1, "chunkId": "000000000000000000000002_v1_c0", "chunkIndex": 0, "text": "synthetic auth", "startOffset": 0, "endOffset": 14, "score": 0.9}
+      ]}}
+    },
+    {
+      "caseId": "approval-01",
+      "query": "How are drafts approved?",
+      "response": {"success": true, "data": {"candidates": []}}
+    },
+    {
+      "caseId": "schedule-01",
+      "query": "What does scheduling store?",
+      "response": {"success": true, "data": {"candidates": [
+        {"sourceId": "000000000000000000000004", "title": "Synthetic scheduling", "contentVersion": 1, "chunkId": "000000000000000000000004_v1_c0", "chunkIndex": 0, "text": "synthetic scheduling", "startOffset": 0, "endOffset": 21, "score": 0.88}
+      ]}}
+    },
+    {
+      "caseId": "version-01",
+      "query": "What changes when a source is edited?",
+      "response": {"success": true, "data": {"candidates": [
+        {"sourceId": "000000000000000000000005", "title": "Synthetic versioning", "contentVersion": 1, "chunkId": "000000000000000000000005_v1_c0", "chunkIndex": 0, "text": "synthetic versioning", "startOffset": 0, "endOffset": 20, "score": 0.87}
+      ]}}
+    },
+    {
+      "caseId": "index-version-01",
+      "query": "How do indexing and versions relate?",
+      "response": {"success": true, "data": {"candidates": [
+        {"sourceId": "000000000000000000000001", "title": "Synthetic indexing", "contentVersion": 1, "chunkId": "000000000000000000000001_v1_c0", "chunkIndex": 0, "text": "synthetic indexing", "startOffset": 0, "endOffset": 18, "score": 0.86},
+        {"sourceId": "000000000000000000000001", "title": "Synthetic indexing", "contentVersion": 1, "chunkId": "000000000000000000000001_v1_c1", "chunkIndex": 1, "text": "synthetic indexing two", "startOffset": 0, "endOffset": 22, "score": 0.84},
+        {"sourceId": "000000000000000000000005", "title": "Synthetic versioning", "contentVersion": 1, "chunkId": "000000000000000000000005_v1_c0", "chunkIndex": 0, "text": "synthetic versioning", "startOffset": 0, "endOffset": 20, "score": 0.82}
+      ]}}
+    },
+    {
+      "caseId": "auth-approval-01",
+      "query": "Who can approve authenticated drafts?",
+      "response": {"success": true, "data": {"candidates": [
+        {"sourceId": "000000000000000000000003", "title": "Synthetic approval", "contentVersion": 1, "chunkId": "000000000000000000000003_v1_c0", "chunkIndex": 0, "text": "synthetic approval", "startOffset": 0, "endOffset": 18, "score": 0.81},
+        {"sourceId": "000000000000000000000002", "title": "Synthetic auth", "contentVersion": 1, "chunkId": "000000000000000000000002_v1_c0", "chunkIndex": 0, "text": "synthetic auth", "startOffset": 0, "endOffset": 14, "score": 0.79}
+      ]}}
+    },
+    {
+      "caseId": "none-01",
+      "query": "What is the office cafeteria menu?",
+      "response": {"success": true, "data": {"candidates": []}}
+    }
+  ]
+}

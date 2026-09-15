@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { FormEvent } from "react";
+import type { ChangeEvent, FormEvent } from "react";
 import { ApiClientError } from "@/lib/api/api-client";
 import {
   createKnowledgeSource,
@@ -20,6 +20,7 @@ import {
 const TITLE_MAX_LENGTH = 120;
 const CONTENT_MIN_LENGTH = 10;
 const CONTENT_MAX_LENGTH = 20_000;
+const IMPORT_MAX_FILE_SIZE = 100 * 1024;
 
 interface KnowledgeSourcesViewProps {
   active: boolean;
@@ -41,6 +42,8 @@ export function KnowledgeSourcesView({
   const [touched, setTouched] = useState({ title: false, content: false });
   const [formError, setFormError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [importLoading, setImportLoading] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [sourceList, setSourceList] = useState<KnowledgeSourceListResponse | null>(null);
   const [page, setPage] = useState(1);
@@ -87,6 +90,9 @@ export function KnowledgeSourcesView({
   const viewDetailsButtonRef = useRef<HTMLButtonElement | null>(null);
   const searchedContentVersion = useRef<number | null>(null);
   const navigationIntentId = useRef(0);
+  const importRequestId = useRef(0);
+  const importInputRef = useRef<HTMLInputElement>(null);
+  const formValuesRef = useRef({ title: "", content: "" });
 
   const titleLength = title.trim().length;
   const contentLength = content.trim().length;
@@ -134,6 +140,7 @@ export function KnowledgeSourcesView({
       detailController.current?.abort();
       searchController.current?.abort();
       editController.current?.abort();
+      importRequestId.current += 1;
     };
   }, []);
 
@@ -181,7 +188,22 @@ export function KnowledgeSourcesView({
     setSearchResults(null);
     setSearchLoading(false);
     setSearchError(null);
+    setImportLoading(false);
+    setImportError(null);
   }, []);
+
+  useEffect(() => {
+    formValuesRef.current = { title, content };
+  }, [content, title]);
+
+  useEffect(() => {
+    if (active) return;
+    importRequestId.current += 1;
+    const timer = window.setTimeout(() => {
+      if (mounted.current) setImportLoading(false);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [active]);
 
   useEffect(() => {
     if (authenticated) return;
@@ -192,6 +214,7 @@ export function KnowledgeSourcesView({
       setTouched({ title: false, content: false });
       setFormError(null);
       setSuccessMessage(null);
+      setImportError(null);
       setSearchQuery("");
       setEditingSource(false);
       onDirtyChange(false);
@@ -427,6 +450,92 @@ export function KnowledgeSourcesView({
       onMutationPendingChange(false);
     }
   }
+
+  const handleImportTextFile = useCallback(async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+
+    const requestNumber = ++importRequestId.current;
+    const initialValues = formValuesRef.current;
+    setImportError(null);
+    setImportLoading(true);
+
+    const extension = file.name.slice(file.name.lastIndexOf(".")).toLowerCase();
+    if (extension !== ".txt" && extension !== ".md") {
+      setImportLoading(false);
+      setImportError("Choose a .txt or .md file.");
+      return;
+    }
+    if (file.size > IMPORT_MAX_FILE_SIZE) {
+      setImportLoading(false);
+      setImportError("The selected file is too large. Choose a file no larger than 100 KiB.");
+      return;
+    }
+
+    try {
+      const bytes = await file.arrayBuffer();
+      if (!mounted.current || requestNumber !== importRequestId.current) return;
+      const importedContent = new TextDecoder("utf-8", { fatal: true }).decode(bytes).replace(/^\uFEFF/, "");
+      const trimmedContent = importedContent.trim();
+      if (importedContent.includes("\0")) {
+        throw new Error("Text files containing NUL characters cannot be imported.");
+      }
+      if (trimmedContent.length === 0) {
+        throw new Error("The selected file is blank.");
+      }
+      if (
+        trimmedContent.length < CONTENT_MIN_LENGTH ||
+        trimmedContent.length > CONTENT_MAX_LENGTH
+      ) {
+        throw new Error("Imported content must contain 10–20,000 trimmed characters.");
+      }
+
+      const suggestedTitle = file.name.slice(0, file.name.length - extension.length).trim();
+      if (suggestedTitle.length < 1 || suggestedTitle.length > TITLE_MAX_LENGTH) {
+        throw new Error("The filename must suggest a title of 1–120 trimmed characters.");
+      }
+      if (
+        formValuesRef.current.title !== initialValues.title ||
+        formValuesRef.current.content !== initialValues.content
+      ) {
+        const replaceChangedInput = window.confirm(
+          "The note form changed while the file was loading. Replace the current title and content with this file?",
+        );
+        if (!replaceChangedInput) {
+          setImportError("Import canceled; your current note input was preserved.");
+          return;
+        }
+      } else if (initialValues.title.length > 0 || initialValues.content.length > 0) {
+        const replaceInput = window.confirm(
+          "Replace the current title and content with this imported file?",
+        );
+        if (!replaceInput) {
+          setImportError("Import canceled; your current note input was preserved.");
+          return;
+        }
+      }
+      if (!mounted.current || requestNumber !== importRequestId.current || !active) return;
+      setTitle(suggestedTitle);
+      setContent(importedContent);
+      setTouched({ title: false, content: false });
+      setFormError(null);
+      setSuccessMessage(null);
+    } catch (error: unknown) {
+      if (!mounted.current || requestNumber !== importRequestId.current) return;
+      setImportError(
+        error instanceof TypeError
+          ? "The selected file is not valid UTF-8 text."
+          : error instanceof Error
+            ? error.message
+            : "Unable to read the selected file.",
+      );
+    } finally {
+      if (requestNumber === importRequestId.current && mounted.current) {
+        setImportLoading(false);
+      }
+    }
+  }, [active]);
 
   const handleSaveEdit = useCallback(async () => {
     if (
@@ -837,7 +946,33 @@ export function KnowledgeSourcesView({
         </p>
 
         <form onSubmit={(event) => void handleCreate(event)} className="mt-6 rounded-xl border border-slate-200 bg-white p-5 shadow-sm" noValidate>
-          <h3 className="text-lg font-semibold text-slate-900">Add a knowledge source</h3>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h3 className="text-lg font-semibold text-slate-900">Add a knowledge source</h3>
+            <div>
+              <input
+                ref={importInputRef}
+                id="knowledge-source-file"
+                type="file"
+                accept=".txt,.md"
+                onChange={(event) => void handleImportTextFile(event)}
+                disabled={creating || deleting || indexing || editPending || importLoading}
+                className="sr-only"
+              />
+              <button
+                type="button"
+                onClick={() => importInputRef.current?.click()}
+                disabled={creating || deleting || indexing || editPending || importLoading}
+                aria-describedby="knowledge-source-file-help"
+                className="rounded-lg border border-indigo-300 bg-white px-3 py-2 text-sm font-semibold text-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {importLoading ? "Importing..." : "Import text file"}
+              </button>
+            </div>
+          </div>
+          <p id="knowledge-source-file-help" className="mt-2 text-xs leading-5 text-slate-500">
+            Select one UTF-8 .txt or .md file up to 100 KiB. Importing fills this form locally;
+            Save uploads the note, and indexing remains a separate explicit action.
+          </p>
           <div className="mt-4 space-y-4">
             <div>
               <div className="flex items-center justify-between gap-3">
@@ -898,6 +1033,7 @@ export function KnowledgeSourcesView({
           </button>
           {successMessage && <p className="mt-3 text-sm font-medium text-teal-700" role="status">{successMessage}</p>}
           {formError && <p className="mt-3 text-sm font-medium text-red-700" role="alert">{formError}</p>}
+          {importError && <p className="mt-3 text-sm font-medium text-red-700" role="alert">{importError}</p>}
           {formDirty && (
             <p className="mt-3 text-xs text-slate-500">
               Unsaved note input is preserved if you navigate away after confirmation.

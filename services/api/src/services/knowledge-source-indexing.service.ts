@@ -53,11 +53,16 @@ export async function indexKnowledgeSourceForUser(
   repository: IndexingRepository = defaultRepository,
   now: IndexingClock = () => new Date(),
 ): Promise<PublicKnowledgeSourceDto> {
+  const startTime = Date.now();
+  const correlationId = sourceId.substring(0, 8);
+
   if (!Types.ObjectId.isValid(ownerId) || !Types.ObjectId.isValid(sourceId)) {
+    console.log(`[indexing] ${correlationId} source-not-found`);
     throw sourceNotFound();
   }
   const current = await repository.findKnowledgeSourceForIndexing(ownerId, sourceId);
   if (!current) {
+    console.log(`[indexing] ${correlationId} source-not-found`);
     throw sourceNotFound();
   }
   if (
@@ -68,12 +73,14 @@ export async function indexKnowledgeSourceForUser(
     current.indexedDimensions &&
     current.indexedChunkCount
   ) {
+    console.log(`[indexing] ${correlationId} already-indexed version=${current.contentVersion}`);
     return toPublicSource(current);
   }
   if (
     current.processingStatus === "indexing" &&
     (current.indexingLeaseExpiresAt ?? new Date(0)) > now()
   ) {
+    console.log(`[indexing] ${correlationId} indexing-in-progress`);
     throw new AppError(409, "SOURCE_INDEXING_IN_PROGRESS", "Knowledge source indexing is in progress");
   }
 
@@ -88,18 +95,22 @@ export async function indexKnowledgeSourceForUser(
   if (!claimed) {
     const latest = await repository.findKnowledgeSourceForIndexing(ownerId, sourceId);
     if (!latest) {
+      console.log(`[indexing] ${correlationId} claim-failed source-deleted`);
       throw sourceNotFound();
     }
     if (
       latest.processingStatus === "indexing" &&
       (latest.indexingLeaseExpiresAt ?? new Date(0)) > now()
     ) {
+      console.log(`[indexing] ${correlationId} claim-failed indexing-in-progress`);
       throw new AppError(409, "SOURCE_INDEXING_IN_PROGRESS", "Knowledge source indexing is in progress");
     }
+    console.log(`[indexing] ${correlationId} claim-failed race`);
     throw new AppError(409, "SOURCE_INDEXING_IN_PROGRESS", "Knowledge source indexing is in progress");
   }
 
   try {
+    console.log(`[indexing] ${correlationId} ai-call-start`);
     const result = await client.index({
       ownerId,
       sourceId,
@@ -116,6 +127,8 @@ export async function indexKnowledgeSourceForUser(
       !Number.isInteger(result.indexedChunkCount) ||
       result.indexedChunkCount < 1
     ) {
+      const elapsedMs = Date.now() - startTime;
+      console.log(`[indexing] ${correlationId} ai-response-invalid elapsed=${elapsedMs}ms`);
       throw new AppError(502, "AI_INVALID_RESPONSE", "The AI service returned an invalid response");
     }
     const metadata: KnowledgeSourceIndexingMetadata = {
@@ -135,10 +148,15 @@ export async function indexKnowledgeSourceForUser(
       metadata,
     );
     if (!finalized) {
+      const elapsedMs = Date.now() - startTime;
+      console.log(`[indexing] ${correlationId} finalize-failed stale elapsed=${elapsedMs}ms`);
       throw new AppError(409, "SOURCE_INDEXING_STALE", "The indexing attempt is no longer current");
     }
+    const elapsedMs = Date.now() - startTime;
+    console.log(`[indexing] ${correlationId} success chunks=${result.indexedChunkCount} elapsed=${elapsedMs}ms`);
     return toPublicSource(finalized);
   } catch (error) {
+    const elapsedMs = Date.now() - startTime;
     const safeFailureCodes = new Set([
       "AI_INVALID_RESPONSE",
       "AI_SERVICE_TIMEOUT",
@@ -159,6 +177,7 @@ export async function indexKnowledgeSourceForUser(
       error instanceof AppError &&
       (error.code === "AI_SERVICE_TIMEOUT" ||
         error.code === "AI_SERVICE_UNAVAILABLE");
+    console.log(`[indexing] ${correlationId} error code=${errorCode} uncertain=${uncertainOutcome} elapsed=${elapsedMs}ms`);
     await repository.finalizeKnowledgeSourceIndexing(
       ownerId,
       sourceId,

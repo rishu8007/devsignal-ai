@@ -20,6 +20,18 @@ from app.services.source_indexing import EmbeddingConfiguration, SourceIndexingS
 
 logger = logging.getLogger("devsignal-ai-service")
 
+# Ensure the logger emits INFO-level messages to stdout
+if not logger.handlers:
+    handler = logging.StreamHandler()
+    handler.setLevel(logging.INFO)
+    formatter = logging.Formatter(
+        "%(levelname)s:%(name)s:%(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
+
 
 @asynccontextmanager
 async def lifespan(application: FastAPI) -> AsyncIterator[None]:

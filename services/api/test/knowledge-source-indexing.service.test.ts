@@ -379,3 +379,57 @@ test("missing or cross-owner sources do not call the AI client", async () => {
     );
     assert.equal(calls, 0);
 });
+
+test("diagnostic logs redact sensitive data", async () => {
+    const logs: string[] = [];
+    const originalLog = console.log;
+    console.log = (...args: unknown[]) => {
+      logs.push(String(args[0]));
+    };
+
+    try {
+      const repository = repositoryWith(source(), {
+        finalizeKnowledgeSourceIndexing: async () =>
+          source({ processingStatus: "indexed" }),
+      });
+      const client = {
+        index: async () => ({
+          sourceId,
+          contentVersion: 1,
+          chunkerVersion: "chunker-v1",
+          embeddingModel: "text-embedding-3-small",
+          dimensions: 1536,
+          indexedChunkCount: 42,
+        }),
+      };
+
+      await indexKnowledgeSourceForUser(ownerId, sourceId, client, repository);
+
+      assert(logs.length > 0, "Expected diagnostic logs");
+      for (const log of logs) {
+        // All logs should start with [indexing]
+        assert(log.includes("[indexing]"), `Log should contain [indexing]: ${log}`);
+        // Logs should contain only safe fields: correlation-id (first 8 chars of sourceId),
+        // stage, http status, error code, elapsed time
+        assert(
+          !/content|password|secret|key|vector|embedding|model/.test(log),
+          `Log contains potentially sensitive field: ${log}`,
+        );
+        // Should not contain full source or owner IDs
+        assert(
+          !log.includes(ownerId),
+          `Log should not contain ownerId: ${log}`,
+        );
+        // Correlation ID should be first 8 chars of sourceId
+        const correlationId = sourceId.substring(0, 8);
+        if (log.includes(correlationId)) {
+          assert(
+            log.split(correlationId).length > 1,
+            `Correlation ID found in log: ${log}`,
+          );
+        }
+      }
+    } finally {
+      console.log = originalLog;
+    }
+  });

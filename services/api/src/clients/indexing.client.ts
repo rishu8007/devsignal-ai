@@ -6,6 +6,19 @@ import {
   type AiIndexingResult,
 } from "./indexing.types.js";
 
+interface IndexingDiagnostics {
+  correlationId: string;
+  stage: string;
+  httpStatus?: number;
+  safeErrorCode?: string;
+  elapsedMs?: number;
+}
+
+function logIndexingDiagnostic(diag: IndexingDiagnostics): void {
+  const diagnostic = `[indexing] ${diag.correlationId} ${diag.stage}${diag.httpStatus ? ` http=${diag.httpStatus}` : ""}${diag.safeErrorCode ? ` error=${diag.safeErrorCode}` : ""}${diag.elapsedMs ? ` elapsed=${diag.elapsedMs}ms` : ""}`;
+  console.log(diagnostic);
+}
+
 export interface AiIndexingClient {
   index(input: {
     ownerId: string;
@@ -28,6 +41,9 @@ export class AiIndexingServiceClient implements AiIndexingClient {
     contentVersion: number;
     content: string;
   }): Promise<AiIndexingResult> {
+    const correlationId = input.sourceId.substring(0, 8);
+    const startTime = Date.now();
+
     if (!this.internalApiKey) {
       throw new AppError(503, "AI_SERVICE_UNAVAILABLE", "The AI service is unavailable");
     }
@@ -46,10 +62,24 @@ export class AiIndexingServiceClient implements AiIndexingClient {
         signal: controller.signal,
       });
     } catch {
+      const elapsedMs = Date.now() - startTime;
+      if (controller.signal.aborted) {
+        logIndexingDiagnostic({
+          correlationId,
+          stage: "ai-request-timeout",
+          elapsedMs,
+        });
+        throw new AppError(504, "AI_SERVICE_TIMEOUT", "The AI service timed out");
+      }
+      logIndexingDiagnostic({
+        correlationId,
+        stage: "ai-request-unavailable",
+        elapsedMs,
+      });
       throw new AppError(
-        controller.signal.aborted ? 504 : 503,
-        controller.signal.aborted ? "AI_SERVICE_TIMEOUT" : "AI_SERVICE_UNAVAILABLE",
-        controller.signal.aborted ? "The AI service timed out" : "The AI service is unavailable",
+        503,
+        "AI_SERVICE_UNAVAILABLE",
+        "The AI service is unavailable",
       );
     } finally {
       clearTimeout(timeout);
@@ -58,6 +88,13 @@ export class AiIndexingServiceClient implements AiIndexingClient {
     try {
       body = await response.json();
     } catch {
+      const elapsedMs = Date.now() - startTime;
+      logIndexingDiagnostic({
+        correlationId,
+        stage: "ai-response-parse",
+        httpStatus: response.status,
+        elapsedMs,
+      });
       throw new AppError(502, "AI_INVALID_RESPONSE", "The AI service returned an invalid response");
     }
     if (!response.ok) {
@@ -73,13 +110,35 @@ export class AiIndexingServiceClient implements AiIndexingClient {
         "INDEXING_FAILED",
       ]);
       const safeCode = safeCodes.has(upstreamCode) ? upstreamCode : "";
+      const elapsedMs = Date.now() - startTime;
+      logIndexingDiagnostic({
+        correlationId,
+        stage: "ai-response-error",
+        httpStatus: response.status,
+        safeErrorCode: safeCode || "unmapped",
+        elapsedMs,
+      });
       const status = response.status === 401 ? 503 : response.status === 504 ? 504 : response.status >= 500 ? 503 : 502;
       throw new AppError(status, safeCode || "AI_SERVICE_ERROR", "The AI indexing request failed");
     }
     const parsed = aiIndexingResponseSchema.safeParse(body);
     if (!parsed.success) {
+      const elapsedMs = Date.now() - startTime;
+      logIndexingDiagnostic({
+        correlationId,
+        stage: "ai-response-invalid",
+        httpStatus: response.status,
+        elapsedMs,
+      });
       throw new AppError(502, "AI_INVALID_RESPONSE", "The AI service returned an invalid response");
     }
+    const elapsedMs = Date.now() - startTime;
+    logIndexingDiagnostic({
+      correlationId,
+      stage: "ai-response-success",
+      httpStatus: response.status,
+      elapsedMs,
+    });
     return parsed.data.data;
   }
 }

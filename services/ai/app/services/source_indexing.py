@@ -117,21 +117,62 @@ class SourceIndexingService:
         self._embedding_configuration = embedding_configuration
 
     async def index(self, source: SourceIndexingInput) -> SourceIndexingResult:
-        chunks = _chunk_source(source)
+        import time
+
+        correlation_id = source.source_id[:8]
+        start_time = time.time()
+        logger = __import__("logging").getLogger("devsignal-ai-service")
+
+        logger.info(f"[indexing] {correlation_id} service-start")
+
         try:
+            chunks = _chunk_source(source)
+            logger.info(f"[indexing] {correlation_id} chunking-success count={len(chunks)}")
+        except SourceIndexingError as e:
+            elapsed_ms = int((time.time() - start_time) * 1000)
+            logger.info(
+                f"[indexing] {correlation_id} chunking-failed kind={e.kind} elapsed={elapsed_ms}ms"
+            )
+            raise
+
+        try:
+            logger.info(f"[indexing] {correlation_id} collection-init-start")
             await self._vector_repository.ensure_collection()
+            logger.info(f"[indexing] {correlation_id} collection-init-success")
         except QdrantRepositoryError as exception:
+            elapsed_ms = int((time.time() - start_time) * 1000)
+            logger.info(
+                f"[indexing] {correlation_id} collection-init-failed "
+                f"kind={exception.kind} elapsed={elapsed_ms}ms"
+            )
             raise SourceIndexingError(exception.kind) from exception
 
         vectors: list[list[float]] = []
+        total_batches = 0
         for batch in _batches(chunks, self._embedding_configuration):
+            total_batches += 1
             try:
+                logger.info(
+                    f"[indexing] {correlation_id} embedding-start "
+                    f"batch={total_batches} size={len(batch)}"
+                )
                 batch_vectors = await self._embedding_provider.embed(
                     [chunk.text for chunk in batch]
                 )
+                logger.info(
+                    f"[indexing] {correlation_id} embedding-success "
+                    f"batch={total_batches} count={len(batch_vectors)}"
+                )
             except EmbeddingProviderError as exception:
+                elapsed_ms = int((time.time() - start_time) * 1000)
+                logger.info(
+                    f"[indexing] {correlation_id} embedding-failed "
+                    f"kind={exception.kind} elapsed={elapsed_ms}ms"
+                )
                 raise SourceIndexingError(exception.kind) from exception
             except (ValueError, TypeError) as exception:
+                elapsed_ms = int((time.time() - start_time) * 1000)
+                logger.info(f"[indexing] {correlation_id} embedding-error elapsed={elapsed_ms}ms")
                 raise SourceIndexingError("invalid_embedding") from exception
             _validate_batch_vectors(
                 batch_vectors,
@@ -150,8 +191,19 @@ class SourceIndexingService:
             for chunk, vector in zip(chunks, vectors, strict=True)
         ]
         try:
+            logger.info(f"[indexing] {correlation_id} upsert-start count={len(records)}")
             await self._vector_repository.upsert(records)
+            elapsed_ms = int((time.time() - start_time) * 1000)
+            logger.info(
+                f"[indexing] {correlation_id} upsert-success "
+                f"count={len(records)} elapsed={elapsed_ms}ms"
+            )
         except QdrantRepositoryError as exception:
+            elapsed_ms = int((time.time() - start_time) * 1000)
+            logger.info(
+                f"[indexing] {correlation_id} upsert-failed kind={exception.kind} "
+                f"elapsed={elapsed_ms}ms"
+            )
             raise SourceIndexingError(exception.kind) from exception
 
         return SourceIndexingResult(

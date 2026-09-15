@@ -48,8 +48,11 @@ export function KnowledgeSourcesView({
   const [listError, setListError] = useState<string | null>(null);
   const [selectedSourceId, setSelectedSourceId] = useState<string | null>(null);
   const [selectedSource, setSelectedSource] = useState<PublicKnowledgeSource | null>(null);
+  const [detailFallbackTitle, setDetailFallbackTitle] = useState<string | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
+  const [detailVersionNotice, setDetailVersionNotice] = useState<string | null>(null);
+  const [detailSearchNotFound, setDetailSearchNotFound] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [indexing, setIndexing] = useState(false);
   const [indexingError, setIndexingError] = useState<string | null>(null);
@@ -80,7 +83,9 @@ export function KnowledgeSourcesView({
   const listDataRef = useRef<KnowledgeSourceListResponse | null>(null);
   const mounted = useRef(true);
   const detailHeadingRef = useRef<HTMLHeadingElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const viewDetailsButtonRef = useRef<HTMLButtonElement | null>(null);
+  const searchedContentVersion = useRef<number | null>(null);
   const navigationIntentId = useRef(0);
 
   const titleLength = title.trim().length;
@@ -148,13 +153,17 @@ export function KnowledgeSourcesView({
     listQueryKey.current = "";
     listDataRef.current = null;
     navigationIntentId.current = 0;
+    searchedContentVersion.current = null;
     viewDetailsButtonRef.current = null;
     setSourceList(null);
     setPage(1);
     setListError(null);
     setSelectedSourceId(null);
     setSelectedSource(null);
+    setDetailFallbackTitle(null);
     setDetailError(null);
+    setDetailVersionNotice(null);
+    setDetailSearchNotFound(false);
     setDetailLoading(false);
     setIndexing(false);
     setIndexingError(null);
@@ -296,8 +305,12 @@ export function KnowledgeSourcesView({
     setEditUncertain(false);
   }, []);
 
-  const handleViewDetails = useCallback(async (source: PublicKnowledgeSource, originButton?: HTMLButtonElement | null) => {
-    if (indexing) return;
+  const handleViewDetails = useCallback(async (
+    source: PublicKnowledgeSource,
+    originButton?: HTMLButtonElement | null,
+    searchedVersion?: number,
+  ) => {
+    if (indexing || deleting || editPending) return;
     if (
       editDirty &&
       source.id !== selectedSourceId &&
@@ -313,15 +326,27 @@ export function KnowledgeSourcesView({
     detailController.current = controller;
     setSelectedSourceId(source.id);
     setSelectedSource(null);
+    setDetailFallbackTitle(source.title);
     setDetailLoading(true);
     setDetailError(null);
+    setDetailVersionNotice(null);
+    setDetailSearchNotFound(false);
     setIndexingConfirm(false);
     setIndexingError(null);
     viewDetailsButtonRef.current = originButton ?? null;
+    searchedContentVersion.current = searchedVersion ?? null;
     try {
       const result = await getKnowledgeSource(source.id, controller.signal);
       if (!mounted.current || requestNumber !== detailRequestId.current) return;
       setSelectedSource(result);
+      if (
+        searchedContentVersion.current !== null &&
+        result.contentVersion !== searchedContentVersion.current
+      ) {
+        setDetailVersionNotice(
+          `This source is now version ${result.contentVersion}; the search matched version ${searchedContentVersion.current}.`,
+        );
+      }
       // Schedule scroll and focus for next render, only if this was the user's intended navigation
       if (intentId === navigationIntentId.current) {
         window.setTimeout(() => {
@@ -340,9 +365,14 @@ export function KnowledgeSourcesView({
         return;
       }
       if (error instanceof ApiClientError && error.code === "SOURCE_NOT_FOUND") {
-        setSelectedSourceId(null);
-        setDetailError("This knowledge source is no longer available.");
-        refreshSources();
+        if (searchedContentVersion.current !== null) {
+          setDetailSearchNotFound(true);
+          setDetailError("This search result is no longer current because the source is unavailable.");
+        } else {
+          setSelectedSourceId(null);
+          setDetailError("This knowledge source is no longer available.");
+          refreshSources();
+        }
         return;
       }
       setDetailError("Unable to load this knowledge source. Please try again.");
@@ -353,7 +383,9 @@ export function KnowledgeSourcesView({
       }
     }
   }, [
+    deleting,
     editDirty,
+    editPending,
     indexing,
     onAuthenticationExpired,
     refreshSources,
@@ -553,6 +585,8 @@ export function KnowledgeSourcesView({
       setSelectedSourceId(null);
       setSelectedSource(null);
       setDetailError(null);
+      setSearchResults(null);
+      setSearchError(null);
       listQueryKey.current = "";
       listDataRef.current = null;
       void loadSources(page, true);
@@ -769,9 +803,14 @@ export function KnowledgeSourcesView({
     }
     editController.current?.abort();
     editRequestId.current += 1;
+    searchedContentVersion.current = null;
     resetEditState();
     setSelectedSourceId(null);
     setSelectedSource(null);
+    setDetailFallbackTitle(null);
+    setDetailError(null);
+    setDetailVersionNotice(null);
+    setDetailSearchNotFound(false);
     detailController.current?.abort();
     if (viewDetailsButtonRef.current && document.contains(viewDetailsButtonRef.current)) {
       viewDetailsButtonRef.current.focus();
@@ -891,6 +930,7 @@ export function KnowledgeSourcesView({
                 </div>
                 <input
                   id="knowledge-search-query"
+                  ref={searchInputRef}
                   value={searchQuery}
                   onChange={(event) => setSearchQuery(event.target.value)}
                   aria-describedby="knowledge-search-help"
@@ -940,6 +980,29 @@ export function KnowledgeSourcesView({
                   <p className="mt-3 whitespace-pre-wrap break-words text-sm leading-7 text-slate-700">
                     {candidate.text}
                   </p>
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      const source: PublicKnowledgeSource = {
+                        id: candidate.sourceId,
+                        title: candidate.title,
+                        content: candidate.text,
+                        contentVersion: candidate.contentVersion,
+                        processingStatus: "indexed",
+                        createdAt: "",
+                        updatedAt: "",
+                      };
+                      void handleViewDetails(
+                        source,
+                        event.currentTarget,
+                        candidate.contentVersion,
+                      );
+                    }}
+                    disabled={creating || deleting || indexing || editPending}
+                    className="mt-3 rounded-lg border border-indigo-300 bg-white px-3 py-2 text-sm font-semibold text-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    View current source
+                  </button>
                 </article>
               ))}
             </div>
@@ -1035,7 +1098,7 @@ export function KnowledgeSourcesView({
                   className="mt-2 text-xl font-semibold text-slate-900 scroll-mt-32"
                   tabIndex={-1}
                 >
-                  {selectedSource?.title ?? selectedListItem?.title ?? "Knowledge source"}
+                  {selectedSource?.title ?? selectedListItem?.title ?? detailFallbackTitle ?? "Knowledge source"}
                 </h3>
               </div>
               <button
@@ -1049,8 +1112,25 @@ export function KnowledgeSourcesView({
             </div>
             {detailLoading && <p className="mt-4 text-sm text-slate-500" role="status">Loading source details...</p>}
             {detailError && <p className="mt-4 text-sm text-red-700" role="alert">{detailError}</p>}
+            {detailSearchNotFound && (
+              <button
+                type="button"
+                onClick={() => {
+                  searchInputRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+                  searchInputRef.current?.focus();
+                }}
+                className="mt-3 rounded-lg border border-indigo-300 bg-white px-3 py-2 text-sm font-semibold text-indigo-700"
+              >
+                Search again manually
+              </button>
+            )}
             {selectedSource && !detailLoading && !detailError && (
               <>
+                {detailVersionNotice && (
+                  <p className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800" role="status">
+                    {detailVersionNotice}
+                  </p>
+                )}
                 {editingSource ? (
                   <form
                     className="mt-4 space-y-4"
@@ -1224,7 +1304,7 @@ export function KnowledgeSourcesView({
                   )}
                   {selectedSource.processingStatus === "indexed" && (
                     <p className="text-sm text-teal-700">
-                      ✓ Indexed. Use in draft generation is not connected yet.
+                      ✓ Indexed. Available for search and optional knowledge-grounded drafts.
                     </p>
                   )}
                   {indexingError && (

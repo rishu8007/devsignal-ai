@@ -1,0 +1,20 @@
+{
+  "schemaVersion": "retrieval-benchmark-v1",
+  "corpus": [
+    {"sourceId": "note-indexing", "title": "Indexing notes", "content": "Indexing creates versioned chunks."},
+    {"sourceId": "note-authentication", "title": "Authentication notes", "content": "Authentication uses a signed session cookie."},
+    {"sourceId": "note-approval", "title": "Draft approval notes", "content": "Approved variations remain available for review."},
+    {"sourceId": "note-scheduling", "title": "Scheduling notes", "content": "Scheduling records a manual planned date."},
+    {"sourceId": "note-versioning", "title": "Source versioning notes", "content": "Editing increments content version before reindexing."}
+  ],
+  "cases": [
+    {"caseId": "indexing-01", "query": "How are notes indexed?", "expectedSourceIds": ["note-indexing"]},
+    {"caseId": "auth-01", "query": "How does authentication work?", "expectedSourceIds": ["note-authentication"]},
+    {"caseId": "approval-01", "query": "How are drafts approved?", "expectedSourceIds": ["note-approval"]},
+    {"caseId": "schedule-01", "query": "What does scheduling store?", "expectedSourceIds": ["note-scheduling"]},
+    {"caseId": "version-01", "query": "What changes when a source is edited?", "expectedSourceIds": ["note-versioning"]},
+    {"caseId": "index-version-01", "query": "How do indexing and versions relate?", "expectedSourceIds": ["note-indexing", "note-versioning"]},
+    {"caseId": "auth-approval-01", "query": "Who can approve authenticated drafts?", "expectedSourceIds": ["note-authentication", "note-approval"]},
+    {"caseId": "none-01", "query": "What is the office cafeteria menu?", "expectedSourceIds": []}
+  ]
+}

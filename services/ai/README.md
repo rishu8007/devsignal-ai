@@ -163,3 +163,29 @@ Embedding model identity is stored with each record. Changing models is not
 automatically compatible merely because dimensions match; use a separate
 collection or a controlled rebuild. Retry behavior is also not transactional
 and repeated retries may repeat embedding provider costs.
+
+## Offline retrieval evaluation
+
+The bounded evaluator in `app/evaluation/retrieval.py` measures source-level
+hit rate, recall, and mean reciprocal rank at 1, 3, and 5. It deduplicates
+repeated source IDs while preserving their first rank before applying `k`;
+production retrieval can still return multiple chunks from one source.
+No-answer cases are excluded from metric denominators and are reported
+separately, including cases that returned results. A returned result is not
+automatically an error because retrieval has no relevance threshold or
+abstention mechanism.
+
+Run the included synthetic example from `services\ai`:
+
+```powershell
+& .venv\Scripts\python.exe -m app.evaluation.cli `
+  --benchmark evaluation\benchmark.json `
+  --results evaluation\results.synthetic.json
+```
+
+The JSON formats are versioned and results carry an explicit `synthetic` or
+`recorded` origin. Separately recorded source rankings can be evaluated later
+with the same command by supplying another results file; this command never
+makes provider calls, database writes, or incurs provider cost. Synthetic
+scores test evaluator correctness, not live retrieval relevance. These
+metrics also do not measure generated factual accuracy or citation faithfulness.

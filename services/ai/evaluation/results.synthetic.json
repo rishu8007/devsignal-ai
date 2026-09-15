@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "retrieval-results-v1",
+  "resultsOrigin": "synthetic",
+  "results": [
+    {"caseId": "indexing-01", "sourceIds": ["note-indexing"]},
+    {"caseId": "auth-01", "sourceIds": ["note-versioning", "note-authentication"]},
+    {"caseId": "approval-01", "sourceIds": []},
+    {"caseId": "schedule-01", "sourceIds": ["note-scheduling"]},
+    {"caseId": "version-01", "sourceIds": ["note-indexing", "note-versioning"]},
+    {"caseId": "index-version-01", "sourceIds": ["note-indexing", "note-indexing", "note-versioning"]},
+    {"caseId": "auth-approval-01", "sourceIds": ["note-approval", "note-authentication"]},
+    {"caseId": "none-01", "sourceIds": ["note-indexing"]}
+  ]
+}

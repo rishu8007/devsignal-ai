@@ -1,6 +1,40 @@
 import { model, Schema, type InferSchemaType, type Types } from "mongoose";
 import { GENERATION_ANGLES } from "../types/generation.js";
 
+const generationCitationSchema = new Schema(
+  {
+    sourceId: {
+      type: Schema.Types.ObjectId,
+      ref: "KnowledgeSource",
+      required: true,
+    },
+    title: {
+      type: String,
+      required: true,
+    },
+    contentVersion: {
+      type: Number,
+      required: true,
+      min: 1,
+    },
+    chunkId: {
+      type: String,
+      required: true,
+    },
+    startOffset: {
+      type: Number,
+      required: true,
+      min: 0,
+    },
+    endOffset: {
+      type: Number,
+      required: true,
+      min: 0,
+    },
+  },
+  { _id: false, versionKey: false },
+);
+
 const generationVariationSchema = new Schema(
   {
     angle: {
@@ -24,6 +58,10 @@ const generationVariationSchema = new Schema(
     scheduledFor: {
       type: Date,
       default: null,
+    },
+    citations: {
+      type: [generationCitationSchema],
+      default: [],
     },
   },
   { _id: true, versionKey: false },
@@ -53,6 +91,12 @@ const generationSchema = new Schema(
       type: String,
       required: true,
       trim: true,
+      immutable: true,
+    },
+    usedKnowledge: {
+      type: Boolean,
+      required: true,
+      default: false,
       immutable: true,
     },
     variations: {

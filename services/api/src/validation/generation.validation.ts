@@ -13,7 +13,21 @@ export const generationVariationParamsSchema = signalGenerationParamsSchema.exte
 
 export const generationQuerySchema = z.object({}).strict();
 
-export const generationRequestSchema = z.union([z.undefined(), z.object({}).strict()]);
+// Extends the previously empty request body with an optional, strictly-validated
+// useKnowledge flag. A missing body (undefined) or an empty object both continue to
+// default to useKnowledge: false, preserving the prior empty-body behavior exactly.
+// Clients can never supply context, citations, or ownerId here; those are always
+// server-derived.
+export const generationRequestSchema = z.union([
+  z.undefined().transform(() => ({ useKnowledge: false as const })),
+  z
+    .object({
+      useKnowledge: z.boolean().default(false),
+    })
+    .strict(),
+]);
+
+export type GenerationRequestInput = z.infer<typeof generationRequestSchema>;
 
 export const editGenerationVariationSchema = z
   .object({
@@ -44,10 +58,13 @@ export const aiGenerationResponseSchema = z
       model: z.string().trim().min(1),
       variations: z
         .array(
-          z.object({
-            angle: z.enum(GENERATION_ANGLES),
-            content: z.string(),
-          }).strict(),
+          z
+            .object({
+              angle: z.enum(GENERATION_ANGLES),
+              content: z.string(),
+              citations: z.array(z.string().min(1)).default([]),
+            })
+            .strict(),
         )
         .length(3),
     }).strict(),

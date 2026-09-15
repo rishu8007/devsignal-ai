@@ -4,7 +4,11 @@ import {
   type GenerationDocument,
 } from "../models/generation.model.js";
 import type { DraftListResult, DraftStatus } from "../types/draft.js";
-import type { GenerationSource, AiGenerationResult } from "../types/generation.js";
+import type {
+  GenerationSource,
+  MappedGenerationResult,
+  PublicSourceCitation,
+} from "../types/generation.js";
 
 export function ensureGenerationIndexes(): Promise<void> {
   return GenerationModel.createIndexes().then(() => undefined);
@@ -21,18 +25,20 @@ export function createGeneration(
   ownerId: string,
   signalId: string,
   source: GenerationSource,
-  result: AiGenerationResult,
+  result: MappedGenerationResult,
 ): Promise<GenerationDocument> {
   return GenerationModel.create({
     ownerId,
     signalId,
     source,
     model: result.model,
+    usedKnowledge: result.usedKnowledge,
     variations: result.variations.map((variation) => ({
       angle: variation.angle,
       content: variation.content,
       status: "draft",
       scheduledFor: null,
+      citations: variation.citations,
     })),
   });
 }
@@ -45,9 +51,10 @@ export function updateGenerationVariation(
     content?: string;
     status: "draft" | "approved";
     scheduledFor?: Date | null;
+    citations?: PublicSourceCitation[];
   },
 ): Promise<GenerationDocument | null> {
-  const fields: Record<string, string | Date | null> = {
+  const fields: Record<string, string | Date | null | PublicSourceCitation[]> = {
     "variations.$.status": update.status,
     updatedAt: new Date(),
   };
@@ -56,6 +63,9 @@ export function updateGenerationVariation(
   }
   if (update.scheduledFor !== undefined) {
     fields["variations.$.scheduledFor"] = update.scheduledFor;
+  }
+  if (update.citations !== undefined) {
+    fields["variations.$.citations"] = update.citations;
   }
 
   return GenerationModel.findOneAndUpdate(

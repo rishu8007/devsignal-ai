@@ -18,14 +18,48 @@ export interface GenerationSource {
   contentType: SignalContentType;
 }
 
+// Sent to the AI service alongside a GenerationSource when knowledge grounding is
+// requested. Only chunkId and text cross this boundary; the AI service is never given
+// sourceId, title, or any owner-identifying metadata.
+export interface GenerationContextChunk {
+  chunkId: string;
+  text: string;
+}
+
 export interface AiGenerationVariation {
   angle: GenerationAngle;
   content: string;
+  citations: string[];
 }
 
 export interface AiGenerationResult {
   model: string;
   variations: AiGenerationVariation[];
+}
+
+// Server-owned citation metadata mapped from a model-returned chunkId. Never derived
+// from client input; always looked up from the API's own MongoDB-validated candidates.
+export interface PublicSourceCitation {
+  sourceId: string;
+  title: string;
+  contentVersion: number;
+  chunkId: string;
+  startOffset: number;
+  endOffset: number;
+}
+
+// The variation shape after citations have been mapped from raw model chunkIds to
+// server-owned citation metadata, ready for persistence.
+export interface MappedGenerationVariation {
+  angle: GenerationAngle;
+  content: string;
+  citations: PublicSourceCitation[];
+}
+
+export interface MappedGenerationResult {
+  model: string;
+  usedKnowledge: boolean;
+  variations: MappedGenerationVariation[];
 }
 
 export interface PublicGenerationVariation {
@@ -34,12 +68,14 @@ export interface PublicGenerationVariation {
   content: string;
   status: "draft" | "approved";
   scheduledFor: Date | null;
+  sourceCitations: PublicSourceCitation[];
 }
 
 export interface PublicGenerationDto {
   id: string;
   signalId: string;
   model: string;
+  usedKnowledge: boolean;
   variations: PublicGenerationVariation[];
   createdAt: Date;
   updatedAt: Date;

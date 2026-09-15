@@ -7,11 +7,12 @@ import {
 import {
   GENERATION_ANGLES,
   type AiGenerationResult,
+  type GenerationContextChunk,
   type GenerationSource,
 } from "../types/generation.js";
 
 export interface AiGenerationClient {
-  generate(source: GenerationSource): Promise<AiGenerationResult>;
+  generate(source: GenerationSource, context?: GenerationContextChunk[]): Promise<AiGenerationResult>;
 }
 
 export class AiServiceClient implements AiGenerationClient {
@@ -21,7 +22,10 @@ export class AiServiceClient implements AiGenerationClient {
     private readonly internalApiKey: string | undefined = env.AI_INTERNAL_API_KEY,
   ) {}
 
-  public async generate(source: GenerationSource): Promise<AiGenerationResult> {
+  public async generate(
+    source: GenerationSource,
+    context?: GenerationContextChunk[],
+  ): Promise<AiGenerationResult> {
     if (!this.internalApiKey) {
       throw new AppError(503, "AI_SERVICE_UNAVAILABLE", "The AI service is unavailable");
     }
@@ -37,7 +41,12 @@ export class AiServiceClient implements AiGenerationClient {
           "Content-Type": "application/json",
           "X-Internal-API-Key": this.internalApiKey,
         },
-        body: JSON.stringify(source),
+        // The context field is only included on the wire when non-empty, so an
+        // ungrounded request produces the exact same request body as before this
+        // feature existed.
+        body: JSON.stringify(
+          context && context.length > 0 ? { ...source, context } : source,
+        ),
         redirect: "error",
         signal: controller.signal,
       });
@@ -63,14 +72,21 @@ export class AiServiceClient implements AiGenerationClient {
 
     const byAngle = new Map<
       (typeof GENERATION_ANGLES)[number],
-      { angle: (typeof GENERATION_ANGLES)[number]; content: string }
+      { angle: (typeof GENERATION_ANGLES)[number]; content: string; citations: string[] }
     >();
     for (const variation of parsed.data.data.variations) {
       const content = variation.content.trim();
-      if (!content || content.length < 100 || content.length > 3000 || byAngle.has(variation.angle)) {
+      const citations = [...new Set(variation.citations)];
+      if (
+        !content ||
+        content.length < 100 ||
+        content.length > 3000 ||
+        byAngle.has(variation.angle) ||
+        citations.length !== variation.citations.length
+      ) {
         throw new AppError(502, "AI_INVALID_RESPONSE", "The AI provider returned an invalid response");
       }
-      byAngle.set(variation.angle, { angle: variation.angle, content });
+      byAngle.set(variation.angle, { angle: variation.angle, content, citations });
     }
 
     if (byAngle.size !== GENERATION_ANGLES.length || GENERATION_ANGLES.some((angle) => !byAngle.has(angle))) {

@@ -15,6 +15,7 @@ import {
 import type {
   AiGenerationResult,
   GenerationSource,
+  MappedGenerationResult,
 } from "../src/types/generation.js";
 
 const ownerId = "507f1f77bcf86cd799439011";
@@ -31,9 +32,9 @@ const source: GenerationSource = {
 const result: AiGenerationResult = {
   model: "gpt-5-mini",
   variations: [
-    { angle: "professional_impact", content: "p".repeat(100) },
-    { angle: "technical_depth", content: "t".repeat(100) },
-    { angle: "learning_story", content: "l".repeat(100) },
+    { angle: "professional_impact", content: "p".repeat(100), citations: [] },
+    { angle: "technical_depth", content: "t".repeat(100), citations: [] },
+    { angle: "learning_story", content: "l".repeat(100), citations: [] },
   ],
 };
 
@@ -56,24 +57,28 @@ function makeGeneration(): GenerationDocument {
     signalId: new Types.ObjectId(signalId),
     source,
     model: result.model,
+    usedKnowledge: false,
     variations: [
       {
         _id: new Types.ObjectId("507f1f77bcf86cd799439015"),
         angle: "technical_depth",
         content: "t".repeat(100),
         status: "draft",
+        citations: [],
       },
       {
         _id: new Types.ObjectId("507f1f77bcf86cd799439016"),
         angle: "learning_story",
         content: "l".repeat(100),
         status: "draft",
+        citations: [],
       },
       {
         _id: new Types.ObjectId("507f1f77bcf86cd799439017"),
         angle: "professional_impact",
         content: "p".repeat(100),
         status: "draft",
+        citations: [],
       },
     ],
     createdAt: new Date(),
@@ -89,7 +94,7 @@ function setup(
       ownerId: string;
       signalId: string;
       source: GenerationSource;
-      result: AiGenerationResult;
+      result: MappedGenerationResult;
     }) => Promise<GenerationDocument>;
   } = {},
 ): {
@@ -127,11 +132,12 @@ function setup(
   return { repository, client, calls };
 }
 
+
 test("ownership failure does not call AI", async () => {
   const { repository, client, calls } = setup({ signal: null });
 
   await assert.rejects(
-    createGenerationForSignal(ownerId, signalId, client, repository),
+    createGenerationForSignal(ownerId, signalId, false, client, repository),
     { code: "SIGNAL_NOT_FOUND" },
   );
   assert.equal(calls.ai, 0);
@@ -140,7 +146,7 @@ test("ownership failure does not call AI", async () => {
 test("existing Generation returns without calling AI and omits private fields", async () => {
   const { repository, client, calls } = setup({ existing: makeGeneration() });
 
-  const response = await createGenerationForSignal(ownerId, signalId, client, repository);
+  const response = await createGenerationForSignal(ownerId, signalId, false, client, repository);
 
   assert.equal(response.created, false);
   assert.equal(calls.ai, 0);
@@ -150,6 +156,7 @@ test("existing Generation returns without calling AI and omits private fields", 
     "model",
     "signalId",
     "updatedAt",
+    "usedKnowledge",
     "variations",
   ]);
   assert.equal(response.generation.variations.length, 3);
@@ -158,7 +165,7 @@ test("existing Generation returns without calling AI and omits private fields", 
 test("valid output is persisted once in the required angle order", async () => {
   const { repository, client, calls } = setup();
 
-  const response = await createGenerationForSignal(ownerId, signalId, client, repository);
+  const response = await createGenerationForSignal(ownerId, signalId, false, client, repository);
 
   assert.equal(response.created, true);
   assert.equal(calls.ai, 1);
@@ -174,12 +181,12 @@ test("invalid output is never persisted", async () => {
   const client: AiGenerationClient = {
     generate: async () => ({
       model: "gpt-5-mini",
-      variations: [{ angle: "technical_depth", content: "too short" }],
+      variations: [{ angle: "technical_depth", content: "too short", citations: [] }],
     }),
   };
 
   await assert.rejects(
-    createGenerationForSignal(ownerId, signalId, client, repository),
+    createGenerationForSignal(ownerId, signalId, false, client, repository),
     { code: "AI_INVALID_RESPONSE" },
   );
   assert.equal(calls.creates, 0);
@@ -199,11 +206,11 @@ test("concurrent calls for one owner and Signal share one provider operation", a
     },
   };
 
-  const first = createGenerationForSignal(ownerId, signalId, client, repository);
+  const first = createGenerationForSignal(ownerId, signalId, false, client, repository);
   while (calls.ai === 0) {
     await new Promise<void>((resolve) => setImmediate(resolve));
   }
-  const second = createGenerationForSignal(ownerId, signalId, client, repository);
+  const second = createGenerationForSignal(ownerId, signalId, false, client, repository);
   release?.();
   const responses = await Promise.all([first, second]);
 
@@ -225,8 +232,8 @@ test("failed operations clear the in-flight guard", async () => {
     },
   };
 
-  await assert.rejects(createGenerationForSignal(ownerId, signalId, client, repository));
-  const response = await createGenerationForSignal(ownerId, signalId, client, repository);
+  await assert.rejects(createGenerationForSignal(ownerId, signalId, false, client, repository));
+  const response = await createGenerationForSignal(ownerId, signalId, false, client, repository);
 
   assert.equal(response.created, true);
   assert.equal(calls.ai, 2);
@@ -242,8 +249,8 @@ test("different owners do not share in-flight results", async () => {
   };
 
   await Promise.all([
-    createGenerationForSignal(ownerId, signalId, client, repository),
-    createGenerationForSignal(otherOwnerId, signalId, client, repository),
+    createGenerationForSignal(ownerId, signalId, false, client, repository),
+    createGenerationForSignal(otherOwnerId, signalId, false, client, repository),
   ]);
 
   assert.equal(calls.ai, 2);
@@ -265,7 +272,7 @@ test("duplicate-key races retrieve the existing owned Generation", async () => {
     findGenerationByOwnerAndSignal: async () => existing,
   };
 
-  const response = await createGenerationForSignal(ownerId, signalId, client, raceRepository);
+  const response = await createGenerationForSignal(ownerId, signalId, false, client, raceRepository);
 
   assert.equal(response.created, false);
   assert.equal(response.generation.id, persisted._id.toString());
@@ -280,14 +287,24 @@ function setupVariationUpdates(
     ownerId: string;
     signalId: string;
     variationId: string;
-    update: { content?: string; status: "draft" | "approved"; scheduledFor?: Date | null };
+    update: {
+      content?: string;
+      status: "draft" | "approved";
+      scheduledFor?: Date | null;
+      citations?: unknown[];
+    };
   }>;
 } {
   const updates: Array<{
     ownerId: string;
     signalId: string;
     variationId: string;
-    update: { content?: string; status: "draft" | "approved"; scheduledFor?: Date | null };
+    update: {
+      content?: string;
+      status: "draft" | "approved";
+      scheduledFor?: Date | null;
+      citations?: unknown[];
+    };
   }> = [];
   const generation = initial;
   const base = setup({ existing: generation });
@@ -339,6 +356,7 @@ test("editing updates only the targeted variation and preserves its identity and
       content: "edited content ".repeat(10).trim(),
       status: "draft",
       scheduledFor: null,
+      citations: [],
     },
   });
   assert.equal(response.variations[1].id, target._id.toString());

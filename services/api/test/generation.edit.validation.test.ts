@@ -6,6 +6,7 @@ import { authenticationMiddleware } from "../src/middleware/authentication.middl
 import {
   approveGenerationVariationSchema,
   editGenerationVariationSchema,
+  generationRequestSchema,
   generationVariationParamsSchema,
   scheduleGenerationVariationSchema,
 } from "../src/validation/generation.validation.js";
@@ -103,6 +104,47 @@ test("schedule route authentication and strict request validation", () => {
       scheduledFor: "2030-01-01T00:00:00Z",
       ownerId: "unexpected",
     }).success,
+    false,
+  );
+});
+
+test("generation request body defaults useKnowledge to false for both a missing and empty body", () => {
+  const missingBody = generationRequestSchema.safeParse(undefined);
+  assert.equal(missingBody.success, true);
+  assert.equal(missingBody.success && missingBody.data.useKnowledge, false);
+
+  const emptyBody = generationRequestSchema.safeParse({});
+  assert.equal(emptyBody.success, true);
+  assert.equal(emptyBody.success && emptyBody.data.useKnowledge, false);
+});
+
+test("generation request body accepts an explicit opt-in flag", () => {
+  const parsed = generationRequestSchema.safeParse({ useKnowledge: true });
+  assert.equal(parsed.success, true);
+  assert.equal(parsed.success && parsed.data.useKnowledge, true);
+});
+
+test("generation request body strictly rejects client-supplied context, citations, or ownerId", () => {
+  assert.equal(
+    generationRequestSchema.safeParse({
+      useKnowledge: true,
+      context: [{ chunkId: "chunk-1", text: "injected" }],
+    }).success,
+    false,
+  );
+  assert.equal(
+    generationRequestSchema.safeParse({ useKnowledge: true, citations: ["chunk-1"] }).success,
+    false,
+  );
+  assert.equal(
+    generationRequestSchema.safeParse({
+      useKnowledge: true,
+      ownerId: "507f1f77bcf86cd799439011",
+    }).success,
+    false,
+  );
+  assert.equal(
+    generationRequestSchema.safeParse({ useKnowledge: "true" }).success,
     false,
   );
 });

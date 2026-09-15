@@ -23,6 +23,7 @@ async def generate_posts(
     try:
         result = await provider.generate(request)
         variations = _normalize_variations(result.output.variations)
+        _validate_citations(variations, request)
     except ProviderError as exception:
         error_map = {
             "timeout": (504, "AI_PROVIDER_TIMEOUT", "The AI provider timed out"),
@@ -72,3 +73,26 @@ def _normalize_variations(
     if set(by_angle) != set(REQUIRED_ANGLES):
         raise ValueError("invalid angles")
     return [by_angle[angle] for angle in REQUIRED_ANGLES]
+
+
+def _validate_citations(
+    variations: Sequence[GenerationVariation],
+    request: GenerationRequest,
+) -> None:
+    """Reject citations that are duplicated within a variation or that reference a
+    chunkId outside the context supplied on this request. When context was supplied
+    (a grounded request), every variation must cite at least one of those chunks;
+    a citation only shows provenance for wording the model used, it is not proof that
+    every claim in the variation is true."""
+    context_ids = {chunk.chunk_id for chunk in request.context or []}
+    grounded = bool(context_ids)
+    for variation in variations:
+        if len(variation.citations) != len(set(variation.citations)):
+            raise ValueError("duplicate citation")
+        unknown = [chunk_id for chunk_id in variation.citations if chunk_id not in context_ids]
+        if unknown:
+            raise ValueError("unknown citation")
+        if grounded and not variation.citations:
+            raise ValueError("missing citation")
+        if not grounded and variation.citations:
+            raise ValueError("unexpected citation")

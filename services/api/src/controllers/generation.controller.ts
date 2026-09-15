@@ -10,6 +10,7 @@ import {
 } from "../services/generation.service.js";
 import type {
   EditGenerationVariationInput,
+  GenerationRequestInput,
   ScheduleGenerationVariationInput,
 } from "../validation/generation.validation.js";
 
@@ -20,7 +21,8 @@ export async function createGeneration(request: Request, response: Response): Pr
     throw new AppError(401, "AUTHENTICATION_REQUIRED", "Authentication is required");
   }
 
-  const result = await createGenerationForSignal(ownerId, signalId);
+  const body = request.body as GenerationRequestInput;
+  const result = await createGenerationForSignal(ownerId, signalId, body.useKnowledge);
   response.status(result.created ? 201 : 200).json({
     success: true,
     data: { generation: result.generation },

@@ -1,8 +1,9 @@
 "use client";
 
-import { request } from "@/lib/api/api-client";
+import { ApiClientError, request } from "@/lib/api/api-client";
 
 export type KnowledgeSourceProcessingStatus = "pending" | "indexing" | "indexed" | "failed";
+export const KNOWLEDGE_SEARCH_QUERY_MAX_CODE_POINTS = 1000;
 
 export interface PublicKnowledgeSource {
   id: string;
@@ -24,6 +25,22 @@ export interface KnowledgeSourceListResponse {
   };
 }
 
+export interface KnowledgeSearchCandidate {
+  sourceId: string;
+  title: string;
+  contentVersion: number;
+  chunkId: string;
+  chunkIndex: number;
+  text: string;
+  startOffset: number;
+  endOffset: number;
+  score: number;
+}
+
+export interface KnowledgeSearchResponse {
+  candidates: KnowledgeSearchCandidate[];
+}
+
 interface KnowledgeSourceEnvelope {
   success: true;
   data: { source: PublicKnowledgeSource };
@@ -37,6 +54,11 @@ interface KnowledgeSourceListEnvelope {
 interface KnowledgeSourceDeleteEnvelope {
   success: true;
   data: { message: "Knowledge source deleted" };
+}
+
+interface KnowledgeSearchEnvelope {
+  success: true;
+  data: KnowledgeSearchResponse;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -100,6 +122,40 @@ function isKnowledgeSourceDeleteResponse(
   );
 }
 
+function isKnowledgeSearchCandidate(value: unknown): value is KnowledgeSearchCandidate {
+  return (
+    isRecord(value) &&
+    typeof value.sourceId === "string" &&
+    typeof value.title === "string" &&
+    typeof value.contentVersion === "number" &&
+    Number.isInteger(value.contentVersion) &&
+    value.contentVersion >= 1 &&
+    typeof value.chunkId === "string" &&
+    typeof value.chunkIndex === "number" &&
+    Number.isInteger(value.chunkIndex) &&
+    value.chunkIndex >= 0 &&
+    typeof value.text === "string" &&
+    typeof value.startOffset === "number" &&
+    Number.isInteger(value.startOffset) &&
+    value.startOffset >= 0 &&
+    typeof value.endOffset === "number" &&
+    Number.isInteger(value.endOffset) &&
+    value.endOffset >= value.startOffset &&
+    typeof value.score === "number" &&
+    Number.isFinite(value.score)
+  );
+}
+
+function isKnowledgeSearchResponse(value: unknown): value is KnowledgeSearchEnvelope {
+  return (
+    isRecord(value) &&
+    value.success === true &&
+    isRecord(value.data) &&
+    Array.isArray(value.data.candidates) &&
+    value.data.candidates.every(isKnowledgeSearchCandidate)
+  );
+}
+
 export function createKnowledgeSource(payload: {
   title: string;
   content: string;
@@ -141,6 +197,30 @@ export function getKnowledgeSource(
     { method: "GET", signal },
     isKnowledgeSourceResponse,
   ).then((response) => response.data.source);
+}
+
+export function searchKnowledgeSources(
+  query: string,
+  signal?: AbortSignal,
+): Promise<KnowledgeSearchResponse> {
+  const normalizedQuery = query.trim();
+  const queryLength = Array.from(normalizedQuery).length;
+  if (queryLength === 0 || queryLength > KNOWLEDGE_SEARCH_QUERY_MAX_CODE_POINTS) {
+    throw new ApiClientError(
+      "Search queries must contain 1–1000 Unicode characters.",
+      422,
+      "VALIDATION_ERROR",
+    );
+  }
+  return request(
+    "/sources/search",
+    {
+      method: "POST",
+      body: JSON.stringify({ query: normalizedQuery, limit: 5 }),
+      signal,
+    },
+    isKnowledgeSearchResponse,
+  ).then((response) => response.data);
 }
 
 export function deleteKnowledgeSource(sourceId: string): Promise<void> {

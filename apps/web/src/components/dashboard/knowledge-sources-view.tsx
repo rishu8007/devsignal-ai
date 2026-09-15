@@ -9,6 +9,9 @@ import {
   getKnowledgeSource,
   indexKnowledgeSource,
   listKnowledgeSources,
+  KNOWLEDGE_SEARCH_QUERY_MAX_CODE_POINTS,
+  searchKnowledgeSources,
+  type KnowledgeSearchResponse,
   type KnowledgeSourceListResponse,
   type PublicKnowledgeSource,
 } from "@/lib/api/knowledge-source-client";
@@ -37,6 +40,7 @@ export function KnowledgeSourcesView({
   const [touched, setTouched] = useState({ title: false, content: false });
   const [formError, setFormError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
   const [sourceList, setSourceList] = useState<KnowledgeSourceListResponse | null>(null);
   const [page, setPage] = useState(1);
   const [listLoading, setListLoading] = useState(false);
@@ -49,10 +53,16 @@ export function KnowledgeSourcesView({
   const [indexing, setIndexing] = useState(false);
   const [indexingError, setIndexingError] = useState<string | null>(null);
   const [indexingConfirm, setIndexingConfirm] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<KnowledgeSearchResponse | null>(null);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
   const listController = useRef<AbortController | null>(null);
   const detailController = useRef<AbortController | null>(null);
+  const searchController = useRef<AbortController | null>(null);
   const listRequestId = useRef(0);
   const detailRequestId = useRef(0);
+  const searchRequestId = useRef(0);
   const listQueryKey = useRef("");
   const listDataRef = useRef<KnowledgeSourceListResponse | null>(null);
   const mounted = useRef(true);
@@ -62,6 +72,7 @@ export function KnowledgeSourcesView({
 
   const titleLength = title.trim().length;
   const contentLength = content.trim().length;
+  const searchQueryLength = Array.from(searchQuery.trim()).length;
   const titleError =
     touched.title && (titleLength < 1 || titleLength > TITLE_MAX_LENGTH)
       ? "Title must contain 1–120 trimmed characters."
@@ -83,6 +94,7 @@ export function KnowledgeSourcesView({
       mounted.current = false;
       listController.current?.abort();
       detailController.current?.abort();
+      searchController.current?.abort();
     };
   }, []);
 
@@ -93,8 +105,10 @@ export function KnowledgeSourcesView({
   const clearSourceState = useCallback(() => {
     listController.current?.abort();
     detailController.current?.abort();
+    searchController.current?.abort();
     listRequestId.current += 1;
     detailRequestId.current += 1;
+    searchRequestId.current += 1;
     listQueryKey.current = "";
     listDataRef.current = null;
     navigationIntentId.current = 0;
@@ -109,6 +123,9 @@ export function KnowledgeSourcesView({
     setIndexing(false);
     setIndexingError(null);
     setIndexingConfirm(false);
+    setSearchResults(null);
+    setSearchLoading(false);
+    setSearchError(null);
   }, []);
 
   useEffect(() => {
@@ -120,10 +137,27 @@ export function KnowledgeSourcesView({
       setTouched({ title: false, content: false });
       setFormError(null);
       setSuccessMessage(null);
+      setSearchQuery("");
       onDirtyChange(false);
     }, 0);
     return () => window.clearTimeout(timer);
   }, [authenticated, clearSourceState, onDirtyChange]);
+
+  useEffect(() => {
+    if (active && authenticated) return;
+    searchController.current?.abort();
+    searchRequestId.current += 1;
+    const timer = window.setTimeout(() => {
+      if (!mounted.current) return;
+      setSearchLoading(false);
+      if (!authenticated) {
+        setSearchQuery("");
+        setSearchResults(null);
+        setSearchError(null);
+      }
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [active, authenticated]);
 
   const loadSources = useCallback(async (requestedPage: number, force = false) => {
     const queryKey = String(requestedPage);
@@ -233,6 +267,7 @@ export function KnowledgeSourcesView({
     setSuccessMessage(null);
     if (!formValid || deleting) return;
 
+    setCreating(true);
     onMutationPendingChange(true);
     try {
       await createKnowledgeSource({ title: title.trim(), content: content.trim() });
@@ -255,6 +290,7 @@ export function KnowledgeSourcesView({
         setFormError("Unable to save this knowledge source. Please try again.");
       }
     } finally {
+      if (mounted.current) setCreating(false);
       onMutationPendingChange(false);
     }
   }
@@ -321,6 +357,7 @@ export function KnowledgeSourcesView({
         setSourceList(updatedList);
         listDataRef.current = updatedList;
       }
+
     } catch (error: unknown) {
       if (!mounted.current) return;
       setIndexingConfirm(false);
@@ -363,6 +400,71 @@ export function KnowledgeSourcesView({
       onMutationPendingChange(false);
     }
   }
+
+  const handleSearch = useCallback(async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (creating || deleting || indexing || searchLoading) return;
+
+    const query = searchQuery.trim();
+    const queryLength = Array.from(query).length;
+    setSearchResults(null);
+    setSearchError(null);
+    if (queryLength === 0) {
+      setSearchError("Enter a search query.");
+      return;
+    }
+    if (queryLength > KNOWLEDGE_SEARCH_QUERY_MAX_CODE_POINTS) {
+      setSearchError("Search queries must be 1–1000 Unicode characters.");
+      return;
+    }
+
+    const requestNumber = ++searchRequestId.current;
+    searchController.current?.abort();
+    const controller = new AbortController();
+    searchController.current = controller;
+    setSearchLoading(true);
+    try {
+      const result = await searchKnowledgeSources(query, controller.signal);
+      if (!mounted.current || requestNumber !== searchRequestId.current) return;
+      setSearchResults(result);
+    } catch (error: unknown) {
+      if (error instanceof ApiClientError && error.code === "REQUEST_ABORTED") return;
+      if (!mounted.current || requestNumber !== searchRequestId.current) return;
+      if (error instanceof ApiClientError && error.code === "AUTHENTICATION_REQUIRED") {
+        onAuthenticationExpired();
+      } else if (
+        error instanceof ApiClientError &&
+        error.code === "KNOWLEDGE_RETRIEVAL_COLLECTION_MISSING"
+      ) {
+        setSearchError("Knowledge search is not initialized yet. Index a note before searching.");
+      } else if (
+        error instanceof ApiClientError &&
+        [
+          "KNOWLEDGE_RETRIEVAL_UNAVAILABLE",
+          "AI_SERVICE_UNAVAILABLE",
+          "AI_SERVICE_TIMEOUT",
+          "NETWORK_ERROR",
+          "REQUEST_TIMEOUT",
+        ].includes(error.code)
+      ) {
+        setSearchError("Knowledge search is temporarily unavailable. Please try again later.");
+      } else {
+        setSearchError("Unable to search your knowledge notes. Please try again.");
+      }
+    } finally {
+      if (requestNumber === searchRequestId.current) {
+        if (mounted.current) setSearchLoading(false);
+        if (searchController.current === controller) searchController.current = null;
+      }
+    }
+  }, [
+    creating,
+    deleting,
+    indexing,
+    onAuthenticationExpired,
+    searchLoading,
+    searchQuery,
+  ]);
 
   async function handleRefreshStatus() {
     if (!selectedSource || detailLoading || indexing) return;
@@ -424,7 +526,7 @@ export function KnowledgeSourcesView({
         </h2>
         <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600">
           Save text notes for embedding and indexing. Notes are saved immediately.
-          Indexing prepares your notes for AI use. Grounded generation using indexed notes is not yet connected.
+          Indexing prepares your notes for AI use, and explicit search lets you inspect matching indexed text.
         </p>
 
         <form onSubmit={(event) => void handleCreate(event)} className="mt-6 rounded-xl border border-slate-200 bg-white p-5 shadow-sm" noValidate>
@@ -495,6 +597,86 @@ export function KnowledgeSourcesView({
             </p>
           )}
         </form>
+
+        <section
+          className="mt-6 rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
+          aria-labelledby="knowledge-search-heading"
+        >
+          <h3 id="knowledge-search-heading" className="text-lg font-semibold text-slate-900">
+            Search indexed notes
+          </h3>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
+            Search notes that have been indexed. Each search may use an embedding provider and
+            may incur a provider cost. Matches are supporting text, not confidence scores or
+            factual verification.
+          </p>
+          <form onSubmit={(event) => void handleSearch(event)} className="mt-4" noValidate>
+            <div className="flex items-end gap-3">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center justify-between gap-3">
+                  <label htmlFor="knowledge-search-query" className="text-sm font-medium text-slate-700">
+                    Search query
+                  </label>
+                  <span className="text-xs text-slate-500">
+                    {searchQueryLength}/{KNOWLEDGE_SEARCH_QUERY_MAX_CODE_POINTS}
+                  </span>
+                </div>
+                <input
+                  id="knowledge-search-query"
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                  aria-describedby="knowledge-search-help"
+                  aria-invalid={Boolean(searchError && !searchLoading)}
+                  className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm text-slate-900"
+                  placeholder="e.g. event-driven migration lessons"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={creating || deleting || indexing || searchLoading}
+                className="rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+              >
+                {searchLoading ? "Searching..." : "Search"}
+              </button>
+            </div>
+            <p id="knowledge-search-help" className="mt-2 text-xs text-slate-500">
+              Enter 1–{KNOWLEDGE_SEARCH_QUERY_MAX_CODE_POINTS} Unicode characters. Searches return up to 5 matching chunks.
+            </p>
+          </form>
+          {searchLoading && (
+            <p className="mt-4 text-sm text-slate-500" role="status">
+              Searching indexed notes...
+            </p>
+          )}
+          {!searchLoading && searchError && (
+            <p className="mt-4 text-sm text-red-700" role="alert">{searchError}</p>
+          )}
+          {!searchLoading && !searchError && searchResults === null && (
+            <p className="mt-4 text-sm text-slate-500">
+              Submit a query to search your indexed notes.
+            </p>
+          )}
+          {!searchLoading && !searchError && searchResults?.candidates.length === 0 && (
+            <p className="mt-4 text-sm text-slate-500">
+              No matching indexed notes were found.
+            </p>
+          )}
+          {!searchLoading && !searchError && searchResults && searchResults.candidates.length > 0 && (
+            <div className="mt-4 space-y-4" aria-label="Knowledge search results">
+              {searchResults.candidates.map((candidate) => (
+                <article key={candidate.chunkId} className="rounded-lg border border-slate-200 p-4">
+                  <h4 className="font-semibold text-slate-900">{candidate.title}</h4>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Content version {candidate.contentVersion}
+                  </p>
+                  <p className="mt-3 whitespace-pre-wrap break-words text-sm leading-7 text-slate-700">
+                    {candidate.text}
+                  </p>
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
 
         {listLoading && (
           <p className="mt-6 rounded-xl border border-slate-200 bg-white p-5 text-sm text-slate-500" role="status">

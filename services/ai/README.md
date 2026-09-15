@@ -153,6 +153,12 @@ using them, the Express API must verify current MongoDB ownership, source
 existence, `contentVersion`, and indexed status. This checkpoint does not add
 that validation or connect retrieval to generation.
 
+`POST /api/v1/retrievals` is protected by `X-Internal-API-Key`. Retrieval
+never initializes a missing Qdrant collection: collection absence and storage
+outages are returned as distinct safe errors. The endpoint returns candidate
+metadata and text without vectors; the API performs the authoritative,
+point-in-time MongoDB validation before exposing content.
+
 Embedding model identity is stored with each record. Changing models is not
 automatically compatible merely because dimensions match; use a separate
 collection or a controlled rebuild. Retry behavior is also not transactional

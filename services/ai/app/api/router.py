@@ -3,8 +3,10 @@ from fastapi import APIRouter
 from app.api.routes.generations import router as generations_router
 from app.api.routes.health import router as health_router
 from app.api.routes.indexings import router as indexings_router
+from app.api.routes.retrievals import router as retrievals_router
 
 router = APIRouter(prefix="/api/v1")
 router.include_router(health_router)
 router.include_router(generations_router)
 router.include_router(indexings_router)
+router.include_router(retrievals_router)

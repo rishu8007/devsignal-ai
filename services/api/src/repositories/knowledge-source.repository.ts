@@ -48,6 +48,19 @@ export function findKnowledgeSourceByIdAndOwner(
     .exec();
 }
 
+export function findKnowledgeSourcesByIdsAndOwner(
+  ownerId: string,
+  sourceIds: string[],
+): Promise<KnowledgeSourceDocument[]> {
+  return KnowledgeSourceModel.find({ _id: { $in: sourceIds }, ownerId })
+    .select(
+      "_id title content contentVersion processingStatus " +
+        "+indexedContentVersion +indexedChunkerVersion +indexedEmbeddingModel +indexedDimensions",
+    )
+    .lean<KnowledgeSourceDocument[]>()
+    .exec();
+}
+
 export function deleteKnowledgeSourceByIdAndOwner(
   ownerId: string,
   sourceId: string,

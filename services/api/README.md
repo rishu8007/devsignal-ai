@@ -41,3 +41,9 @@ metadata are never included in public source DTOs.
 Deletion is rejected while an active indexing lease exists. Retrieval and
 vector cleanup are intentionally deferred: callers must revalidate MongoDB
 source ownership and content version before using indexed chunks.
+
+`POST /api/v1/sources/search` performs owner-scoped retrieval through the
+internal AI service and validates each candidate against MongoDB before
+returning it. The returned score is a similarity score, not factual
+confidence. MongoDB validation is a point-in-time check; a source can change
+immediately after validation.

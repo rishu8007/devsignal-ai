@@ -20,6 +20,8 @@ import {
   type KnowledgeSourceParams,
   type ListKnowledgeSourcesQuery,
 } from "../validation/knowledge-source.validation.js";
+import { searchKnowledgeSources } from "../controllers/knowledge-source-retrieval.controller.js";
+import { knowledgeSourceSearchSchema } from "../validation/retrieval.validation.js";
 
 export const knowledgeSourceRouter = Router();
 
@@ -32,6 +34,7 @@ const validateSourceParams = validateParams(
 
 knowledgeSourceRouter.use(authenticationMiddleware);
 knowledgeSourceRouter.post("/", validateRequest(createKnowledgeSourceSchema), createKnowledgeSource);
+knowledgeSourceRouter.post("/search", validateRequest(knowledgeSourceSearchSchema), searchKnowledgeSources);
 knowledgeSourceRouter.get(
   "/",
   validateQuery(listKnowledgeSourcesQuerySchema, (locals, query: ListKnowledgeSourcesQuery) => {

@@ -11,6 +11,7 @@ import {
   listKnowledgeSources,
   KNOWLEDGE_SEARCH_QUERY_MAX_CODE_POINTS,
   searchKnowledgeSources,
+  updateKnowledgeSource,
   type KnowledgeSearchResponse,
   type KnowledgeSourceListResponse,
   type PublicKnowledgeSource,
@@ -53,6 +54,16 @@ export function KnowledgeSourcesView({
   const [indexing, setIndexing] = useState(false);
   const [indexingError, setIndexingError] = useState<string | null>(null);
   const [indexingConfirm, setIndexingConfirm] = useState(false);
+  const [editingSource, setEditingSource] = useState(false);
+  const [editTitle, setEditTitle] = useState("");
+  const [editContent, setEditContent] = useState("");
+  const [editTouched, setEditTouched] = useState({ title: false, content: false });
+  const [editExpectedVersion, setEditExpectedVersion] = useState<number | null>(null);
+  const [editPending, setEditPending] = useState(false);
+  const [editStatusLoading, setEditStatusLoading] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+  const [editConflict, setEditConflict] = useState(false);
+  const [editUncertain, setEditUncertain] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<KnowledgeSearchResponse | null>(null);
   const [searchLoading, setSearchLoading] = useState(false);
@@ -60,9 +71,11 @@ export function KnowledgeSourcesView({
   const listController = useRef<AbortController | null>(null);
   const detailController = useRef<AbortController | null>(null);
   const searchController = useRef<AbortController | null>(null);
+  const editController = useRef<AbortController | null>(null);
   const listRequestId = useRef(0);
   const detailRequestId = useRef(0);
   const searchRequestId = useRef(0);
+  const editRequestId = useRef(0);
   const listQueryKey = useRef("");
   const listDataRef = useRef<KnowledgeSourceListResponse | null>(null);
   const mounted = useRef(true);
@@ -73,6 +86,8 @@ export function KnowledgeSourcesView({
   const titleLength = title.trim().length;
   const contentLength = content.trim().length;
   const searchQueryLength = Array.from(searchQuery.trim()).length;
+  const editTitleLength = editTitle.trim().length;
+  const editContentLength = editContent.trim().length;
   const titleError =
     touched.title && (titleLength < 1 || titleLength > TITLE_MAX_LENGTH)
       ? "Title must contain 1–120 trimmed characters."
@@ -87,6 +102,24 @@ export function KnowledgeSourcesView({
     contentLength >= CONTENT_MIN_LENGTH &&
     contentLength <= CONTENT_MAX_LENGTH;
   const formDirty = title.length > 0 || content.length > 0;
+  const editTitleError =
+    editTouched.title && (editTitleLength < 1 || editTitleLength > TITLE_MAX_LENGTH)
+      ? "Title must contain 1–120 trimmed characters."
+      : null;
+  const editContentError =
+    editTouched.content &&
+    (editContentLength < CONTENT_MIN_LENGTH || editContentLength > CONTENT_MAX_LENGTH)
+      ? "Content must contain 10–20,000 trimmed characters."
+      : null;
+  const editFormValid =
+    editTitleLength >= 1 &&
+    editTitleLength <= TITLE_MAX_LENGTH &&
+    editContentLength >= CONTENT_MIN_LENGTH &&
+    editContentLength <= CONTENT_MAX_LENGTH;
+  const editDirty =
+    editingSource &&
+    selectedSource !== null &&
+    (editTitle.trim() !== selectedSource.title || editContent.trim() !== selectedSource.content);
 
   useEffect(() => {
     mounted.current = true;
@@ -95,20 +128,23 @@ export function KnowledgeSourcesView({
       listController.current?.abort();
       detailController.current?.abort();
       searchController.current?.abort();
+      editController.current?.abort();
     };
   }, []);
 
   useEffect(() => {
-    onDirtyChange(formDirty);
-  }, [formDirty, onDirtyChange]);
+    onDirtyChange(formDirty || editDirty);
+  }, [editDirty, formDirty, onDirtyChange]);
 
   const clearSourceState = useCallback(() => {
     listController.current?.abort();
     detailController.current?.abort();
     searchController.current?.abort();
+    editController.current?.abort();
     listRequestId.current += 1;
     detailRequestId.current += 1;
     searchRequestId.current += 1;
+    editRequestId.current += 1;
     listQueryKey.current = "";
     listDataRef.current = null;
     navigationIntentId.current = 0;
@@ -123,6 +159,16 @@ export function KnowledgeSourcesView({
     setIndexing(false);
     setIndexingError(null);
     setIndexingConfirm(false);
+    setEditingSource(false);
+    setEditTitle("");
+    setEditContent("");
+    setEditTouched({ title: false, content: false });
+    setEditExpectedVersion(null);
+    setEditPending(false);
+    setEditStatusLoading(false);
+    setEditError(null);
+    setEditConflict(false);
+    setEditUncertain(false);
     setSearchResults(null);
     setSearchLoading(false);
     setSearchError(null);
@@ -138,6 +184,7 @@ export function KnowledgeSourcesView({
       setFormError(null);
       setSuccessMessage(null);
       setSearchQuery("");
+      setEditingSource(false);
       onDirtyChange(false);
     }, 0);
     return () => window.clearTimeout(timer);
@@ -210,8 +257,55 @@ export function KnowledgeSourcesView({
     void loadSources(page, true);
   }, [loadSources, page]);
 
+  const replaceSourceState = useCallback((updated: PublicKnowledgeSource) => {
+    setSelectedSource(updated);
+    setSourceList((current) => {
+      if (!current) return current;
+      const next = {
+        ...current,
+        sources: current.sources.map((source) =>
+          source.id === updated.id ? updated : source,
+        ),
+      };
+      listDataRef.current = next;
+      return next;
+    });
+  }, []);
+
+  const resetEditState = useCallback(() => {
+    setEditingSource(false);
+    setEditTitle("");
+    setEditContent("");
+    setEditTouched({ title: false, content: false });
+    setEditExpectedVersion(null);
+    setEditPending(false);
+    setEditStatusLoading(false);
+    setEditError(null);
+    setEditConflict(false);
+    setEditUncertain(false);
+  }, []);
+
+  const beginEditing = useCallback((source: PublicKnowledgeSource) => {
+    setEditingSource(true);
+    setEditTitle(source.title);
+    setEditContent(source.content);
+    setEditTouched({ title: false, content: false });
+    setEditExpectedVersion(source.contentVersion);
+    setEditError(null);
+    setEditConflict(false);
+    setEditUncertain(false);
+  }, []);
+
   const handleViewDetails = useCallback(async (source: PublicKnowledgeSource, originButton?: HTMLButtonElement | null) => {
     if (indexing) return;
+    if (
+      editDirty &&
+      source.id !== selectedSourceId &&
+      !window.confirm("You have unsaved source edits. Leave this source?")
+    ) {
+      return;
+    }
+    resetEditState();
     const requestNumber = ++detailRequestId.current;
     const intentId = ++navigationIntentId.current;
     detailController.current?.abort();
@@ -258,7 +352,14 @@ export function KnowledgeSourcesView({
         if (detailController.current === controller) detailController.current = null;
       }
     }
-  }, [onAuthenticationExpired, refreshSources, indexing]);
+  }, [
+    editDirty,
+    indexing,
+    onAuthenticationExpired,
+    refreshSources,
+    resetEditState,
+    selectedSourceId,
+  ]);
 
   async function handleCreate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -294,6 +395,150 @@ export function KnowledgeSourcesView({
       onMutationPendingChange(false);
     }
   }
+
+  const handleSaveEdit = useCallback(async () => {
+    if (
+      !selectedSource ||
+      !editingSource ||
+      !editFormValid ||
+      !editDirty ||
+      editExpectedVersion === null ||
+      editPending ||
+      deleting ||
+      indexing
+    ) {
+      return;
+    }
+
+    const sourceId = selectedSource.id;
+    const expectedContentVersion = editExpectedVersion;
+    const requestNumber = ++editRequestId.current;
+    editController.current?.abort();
+    const controller = new AbortController();
+    editController.current = controller;
+    setEditPending(true);
+    setEditError(null);
+    setEditConflict(false);
+    setEditUncertain(false);
+    onMutationPendingChange(true);
+
+    listRequestId.current += 1;
+    detailRequestId.current += 1;
+    searchRequestId.current += 1;
+    listController.current?.abort();
+    detailController.current?.abort();
+    searchController.current?.abort();
+
+    try {
+      const updated = await updateKnowledgeSource(
+        sourceId,
+        {
+          title: editTitle.trim(),
+          content: editContent.trim(),
+          expectedContentVersion,
+        },
+        controller.signal,
+      );
+      if (!mounted.current || requestNumber !== editRequestId.current) return;
+      replaceSourceState(updated);
+      setSelectedSourceId(updated.id);
+      setSearchResults(null);
+      setSearchError(null);
+      setIndexingConfirm(false);
+      setIndexingError(null);
+      resetEditState();
+    } catch (error: unknown) {
+      if (error instanceof ApiClientError && error.code === "REQUEST_ABORTED") return;
+      if (!mounted.current || requestNumber !== editRequestId.current) return;
+      if (error instanceof ApiClientError && error.code === "AUTHENTICATION_REQUIRED") {
+        onAuthenticationExpired();
+      } else if (error instanceof ApiClientError && error.code === "SOURCE_VERSION_CONFLICT") {
+        setEditConflict(true);
+        setEditError("This source changed elsewhere. Reload the current source before saving your edits.");
+      } else if (error instanceof ApiClientError && error.code === "SOURCE_INDEXING_IN_PROGRESS") {
+        setEditError("Indexing is in progress. Wait for it to finish before saving this source.");
+      } else if (
+        error instanceof ApiClientError &&
+        ["REQUEST_TIMEOUT", "NETWORK_ERROR"].includes(error.code)
+      ) {
+        setEditUncertain(true);
+        setEditError("The save outcome is uncertain. Check the current source status before trying again.");
+      } else if (error instanceof ApiClientError && error.code === "VALIDATION_ERROR") {
+        setEditError("Please review the title and content limits.");
+      } else {
+        setEditError("Unable to save this source. Please try again.");
+      }
+    } finally {
+      if (requestNumber === editRequestId.current) {
+        if (mounted.current) setEditPending(false);
+        if (editController.current === controller) editController.current = null;
+      }
+      onMutationPendingChange(false);
+    }
+  }, [
+    deleting,
+    editDirty,
+    editExpectedVersion,
+    editFormValid,
+    editPending,
+    editContent,
+    editTitle,
+    editingSource,
+    indexing,
+    onAuthenticationExpired,
+    onMutationPendingChange,
+    replaceSourceState,
+    resetEditState,
+    selectedSource,
+  ]);
+
+  const handleCheckEditStatus = useCallback(async (reloadEdits: boolean) => {
+    if (!selectedSourceId || editStatusLoading || editPending) return;
+    const requestNumber = ++editRequestId.current;
+    editController.current?.abort();
+    const controller = new AbortController();
+    editController.current = controller;
+    setEditStatusLoading(true);
+    setEditError(null);
+    try {
+      const current = await getKnowledgeSource(selectedSourceId, controller.signal);
+      if (!mounted.current || requestNumber !== editRequestId.current) return;
+      replaceSourceState(current);
+      setEditUncertain(false);
+      if (reloadEdits) {
+        beginEditing(current);
+      } else if (editExpectedVersion === current.contentVersion) {
+        setEditConflict(false);
+        setEditError("The current source is still on the version you edited. Your entered changes remain.");
+      } else {
+        setEditConflict(true);
+        setEditError("The current source changed. Reload it explicitly before replacing your entered edits.");
+      }
+    } catch (error: unknown) {
+      if (error instanceof ApiClientError && error.code === "REQUEST_ABORTED") return;
+      if (!mounted.current || requestNumber !== editRequestId.current) return;
+      if (error instanceof ApiClientError && error.code === "AUTHENTICATION_REQUIRED") {
+        onAuthenticationExpired();
+      } else if (error instanceof ApiClientError && error.code === "SOURCE_NOT_FOUND") {
+        setEditError("This source is no longer available.");
+      } else {
+        setEditError("Unable to check the current source. Please try again.");
+      }
+    } finally {
+      if (requestNumber === editRequestId.current) {
+        if (mounted.current) setEditStatusLoading(false);
+        if (editController.current === controller) editController.current = null;
+      }
+    }
+  }, [
+    beginEditing,
+    editExpectedVersion,
+    editPending,
+    editStatusLoading,
+    onAuthenticationExpired,
+    replaceSourceState,
+    selectedSourceId,
+  ]);
 
   async function handleDelete() {
     if (!selectedSource || deleting) return;
@@ -509,6 +754,29 @@ export function KnowledgeSourcesView({
       if (mounted.current) setDetailLoading(false);
     }
   }
+
+  const handleCancelEdit = useCallback(() => {
+    if (editPending) return;
+    resetEditState();
+  }, [editPending, resetEditState]);
+
+  const handleCloseDetails = useCallback(() => {
+    if (
+      editDirty &&
+      !window.confirm("You have unsaved source edits. Close this source?")
+    ) {
+      return;
+    }
+    editController.current?.abort();
+    editRequestId.current += 1;
+    resetEditState();
+    setSelectedSourceId(null);
+    setSelectedSource(null);
+    detailController.current?.abort();
+    if (viewDetailsButtonRef.current && document.contains(viewDetailsButtonRef.current)) {
+      viewDetailsButtonRef.current.focus();
+    }
+  }, [editDirty, resetEditState]);
 
   const selectedListItem = useMemo(
     () => sourceList?.sources.find((source) => source.id === selectedSourceId) ?? null,
@@ -772,15 +1040,8 @@ export function KnowledgeSourcesView({
               </div>
               <button
                 type="button"
-                onClick={() => {
-                  setSelectedSourceId(null);
-                  setSelectedSource(null);
-                  detailController.current?.abort();
-                  // Restore focus to the originating button if it still exists
-                  if (viewDetailsButtonRef.current && document.contains(viewDetailsButtonRef.current)) {
-                    viewDetailsButtonRef.current.focus();
-                  }
-                }}
+                onClick={handleCloseDetails}
+                disabled={editPending}
                 className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-600"
               >
                 Close
@@ -790,12 +1051,110 @@ export function KnowledgeSourcesView({
             {detailError && <p className="mt-4 text-sm text-red-700" role="alert">{detailError}</p>}
             {selectedSource && !detailLoading && !detailError && (
               <>
-                <p className="mt-4 whitespace-pre-wrap break-words text-sm leading-7 text-slate-700">
-                  {selectedSource.content}
-                </p>
+                {editingSource ? (
+                  <form
+                    className="mt-4 space-y-4"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      void handleSaveEdit();
+                    }}
+                    noValidate
+                  >
+                    <div>
+                      <div className="flex items-center justify-between gap-3">
+                        <label htmlFor="edit-knowledge-source-title" className="text-sm font-medium text-slate-700">
+                          Title
+                        </label>
+                        <span className="text-xs text-slate-500">{editTitleLength}/{TITLE_MAX_LENGTH}</span>
+                      </div>
+                      <input
+                        id="edit-knowledge-source-title"
+                        value={editTitle}
+                        maxLength={TITLE_MAX_LENGTH}
+                        onChange={(event) => setEditTitle(event.target.value)}
+                        onBlur={() => setEditTouched((current) => ({ ...current, title: true }))}
+                        aria-invalid={Boolean(editTitleError)}
+                        className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900"
+                      />
+                      {editTitleError && <p className="mt-1 text-sm text-red-700">{editTitleError}</p>}
+                    </div>
+                    <div>
+                      <div className="flex items-center justify-between gap-3">
+                        <label htmlFor="edit-knowledge-source-content" className="text-sm font-medium text-slate-700">
+                          Text notes
+                        </label>
+                        <span className="text-xs text-slate-500">
+                          {editContentLength.toLocaleString()}/{CONTENT_MAX_LENGTH.toLocaleString()}
+                        </span>
+                      </div>
+                      <textarea
+                        id="edit-knowledge-source-content"
+                        value={editContent}
+                        rows={8}
+                        maxLength={CONTENT_MAX_LENGTH}
+                        onChange={(event) => setEditContent(event.target.value)}
+                        onBlur={() => setEditTouched((current) => ({ ...current, content: true }))}
+                        aria-invalid={Boolean(editContentError)}
+                        className="mt-2 w-full resize-y rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm leading-6 text-slate-900"
+                      />
+                      {editContentError && <p className="mt-1 text-sm text-red-700">{editContentError}</p>}
+                    </div>
+                    <p className="text-xs leading-5 text-slate-600">
+                      Saving creates a new content version. Explicitly reindex this source before
+                      the updated note can support searches or new grounded drafts.
+                    </p>
+                    {editError && (
+                      <div className="rounded-lg border border-amber-200 bg-amber-50 p-3" role="alert">
+                        <p className="text-sm text-amber-800">{editError}</p>
+                        {editConflict && (
+                          <button
+                            type="button"
+                            onClick={() => void handleCheckEditStatus(true)}
+                            disabled={editStatusLoading || editPending}
+                            className="mt-2 rounded-lg border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-900 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {editStatusLoading ? "Reloading..." : "Reload current source"}
+                          </button>
+                        )}
+                        {editUncertain && (
+                          <button
+                            type="button"
+                            onClick={() => void handleCheckEditStatus(false)}
+                            disabled={editStatusLoading || editPending}
+                            className="mt-2 rounded-lg border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-900 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {editStatusLoading ? "Checking..." : "Check save status"}
+                          </button>
+                        )}
+                      </div>
+                    )}
+                    <div className="flex flex-wrap gap-3">
+                      <button
+                        type="submit"
+                        disabled={!editFormValid || !editDirty || editPending || editStatusLoading || deleting || indexing}
+                        className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+                      >
+                        {editPending ? "Saving..." : "Save changes"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleCancelEdit}
+                        disabled={editPending}
+                        className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-600 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </form>
+                ) : (
+                  <p className="mt-4 whitespace-pre-wrap break-words text-sm leading-7 text-slate-700">
+                    {selectedSource.content}
+                  </p>
+                )}
                 <p className="mt-4 text-xs text-slate-500">
                   Version {selectedSource.contentVersion} · Updated {formatDate(selectedSource.updatedAt)}
                 </p>
+                {!editingSource && (
                 <div className="mt-4 flex flex-wrap gap-3">
                   {selectedSource.processingStatus === "pending" && !indexingConfirm && (
                     <button
@@ -882,10 +1241,21 @@ export function KnowledgeSourcesView({
                     </div>
                   )}
                 </div>
+                )}
+                {!editingSource && (
+                  <button
+                    type="button"
+                    onClick={() => beginEditing(selectedSource)}
+                    disabled={deleting || indexing}
+                    className="mt-4 rounded-lg border border-indigo-300 bg-white px-4 py-2 text-sm font-semibold text-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Edit
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => void handleDelete()}
-                  disabled={deleting || indexing}
+                  disabled={editingSource || deleting || indexing}
                   className="mt-4 rounded-lg border border-red-300 bg-white px-4 py-2 text-sm font-semibold text-red-700 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {deleting ? "Deleting..." : `Delete "${selectedSource.title}"`}

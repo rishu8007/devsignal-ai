@@ -6,6 +6,7 @@ import type { KnowledgeSourceProcessingStatus } from "../models/knowledge-source
 import type {
   CreateKnowledgeSourceInput,
   ListKnowledgeSourcesQuery,
+  UpdateKnowledgeSourceInput,
 } from "../validation/knowledge-source.validation.js";
 
 export function createKnowledgeSource(
@@ -43,6 +44,70 @@ export function findKnowledgeSourceByIdAndOwner(
   sourceId: string,
 ): Promise<KnowledgeSourceDocument | null> {
   return KnowledgeSourceModel.findOne({ _id: sourceId, ownerId })
+    .select("_id title content contentVersion processingStatus createdAt updatedAt")
+    .lean<KnowledgeSourceDocument>()
+    .exec();
+}
+
+export function updateKnowledgeSourceIfVersionAndLeaseAvailable(
+  ownerId: string,
+  sourceId: string,
+  input: UpdateKnowledgeSourceInput,
+  now: Date,
+): Promise<KnowledgeSourceDocument | null> {
+  const changed = {
+    $or: [
+      { $ne: ["$title", { $literal: input.title }] },
+      { $ne: ["$content", { $literal: input.content }] },
+    ],
+  };
+  return KnowledgeSourceModel.findOneAndUpdate(
+    {
+      _id: sourceId,
+      ownerId,
+      contentVersion: input.expectedContentVersion,
+      $or: [
+        { indexingLeaseExpiresAt: null },
+        { indexingLeaseExpiresAt: { $lte: now } },
+      ],
+    },
+    [
+      {
+        $set: {
+          title: { $literal: input.title },
+          content: { $literal: input.content },
+          contentVersion: {
+            $cond: [changed, { $add: ["$contentVersion", 1] }, "$contentVersion"],
+          },
+          processingStatus: { $cond: [changed, { $literal: "pending" }, "$processingStatus"] },
+          processingErrorCode: { $cond: [changed, { $literal: null }, "$processingErrorCode"] },
+          indexingAttemptId: {
+            $cond: [changed, null, "$indexingAttemptId"],
+          },
+          indexingLeaseExpiresAt: {
+            $cond: [changed, null, "$indexingLeaseExpiresAt"],
+          },
+          indexedContentVersion: {
+            $cond: [changed, null, "$indexedContentVersion"],
+          },
+          indexedChunkerVersion: {
+            $cond: [changed, null, "$indexedChunkerVersion"],
+          },
+          indexedEmbeddingModel: {
+            $cond: [changed, null, "$indexedEmbeddingModel"],
+          },
+          indexedDimensions: {
+            $cond: [changed, null, "$indexedDimensions"],
+          },
+          indexedChunkCount: {
+            $cond: [changed, null, "$indexedChunkCount"],
+          },
+          updatedAt: { $cond: [changed, "$$NOW", "$updatedAt"] },
+        },
+      },
+    ],
+    { new: true, timestamps: false, updatePipeline: true },
+  )
     .select("_id title content contentVersion processingStatus createdAt updatedAt")
     .lean<KnowledgeSourceDocument>()
     .exec();

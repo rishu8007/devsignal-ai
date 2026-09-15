@@ -6,11 +6,13 @@ import {
   deleteKnowledgeSourceForUser,
   getKnowledgeSourceForUser,
   listKnowledgeSourcesForUser,
+  updateKnowledgeSourceForUser,
 } from "../src/services/knowledge-source.service.js";
 import {
   createKnowledgeSourceSchema,
   knowledgeSourceParamsSchema,
   listKnowledgeSourcesQuerySchema,
+  updateKnowledgeSourceSchema,
 } from "../src/validation/knowledge-source.validation.js";
 
 const ownerId = "507f1f77bcf86cd799439011";
@@ -18,7 +20,7 @@ const otherOwnerId = "507f1f77bcf86cd799439012";
 const sourceId = new Types.ObjectId("507f1f77bcf86cd799439013");
 const createdAt = new Date("2030-01-01T00:00:00.000Z");
 
-function source(owner: string = ownerId) {
+function source(owner: string = ownerId, overrides: Record<string, unknown> = {}) {
   return {
     _id: sourceId,
     ownerId: new Types.ObjectId(owner),
@@ -29,6 +31,7 @@ function source(owner: string = ownerId) {
     processingErrorCode: null,
     createdAt,
     updatedAt: createdAt,
+    ...overrides,
   };
 }
 
@@ -53,6 +56,43 @@ test("knowledge source validation trims boundaries and rejects unknown input", (
     createKnowledgeSourceSchema.safeParse({
       title: "A".repeat(121),
       content: "1234567890",
+    }).success,
+    false,
+  );
+  assert.deepEqual(
+    updateKnowledgeSourceSchema.parse({
+      title: "  Updated  ",
+      content: "  Updated content is long enough.  ",
+      expectedContentVersion: 1,
+    }),
+    {
+      title: "Updated",
+      content: "Updated content is long enough.",
+      expectedContentVersion: 1,
+    },
+  );
+  assert.equal(
+    updateKnowledgeSourceSchema.safeParse({
+      title: "Updated",
+      content: "Updated content is long enough.",
+      expectedContentVersion: 0,
+    }).success,
+    false,
+  );
+  assert.equal(
+    updateKnowledgeSourceSchema.safeParse({
+      title: "Updated",
+      content: "Updated content is long enough.",
+      expectedContentVersion: "1",
+    }).success,
+    false,
+  );
+  assert.equal(
+    updateKnowledgeSourceSchema.safeParse({
+      title: "Updated",
+      content: "Updated content is long enough.",
+      expectedContentVersion: 1,
+      ownerId,
     }).success,
     false,
   );
@@ -206,4 +246,162 @@ test("knowledge source deletion passes both owner and source ID atomically", asy
 
   await deleteKnowledgeSourceForUser(ownerId, sourceId.toString(), repository);
   assert.deepEqual(calls, [["lease-aware", ownerId, sourceId.toString()]]);
+});
+
+test("source edits use owner and expected version, incrementing and resetting indexing state", async () => {
+  const calls: unknown[] = [];
+  const updated = source(ownerId, {
+    title: "Updated title",
+    content: "Updated content is long enough.",
+    contentVersion: 2,
+    processingStatus: "pending",
+    processingErrorCode: null,
+    indexingAttemptId: null,
+    indexingLeaseExpiresAt: null,
+    indexedContentVersion: null,
+    indexedChunkerVersion: null,
+    indexedEmbeddingModel: null,
+    indexedDimensions: null,
+    indexedChunkCount: null,
+  });
+  const repository = {
+    createKnowledgeSource: async () => source(),
+    findKnowledgeSourcesByOwner: async () => [],
+    countKnowledgeSourcesByOwner: async () => 0,
+    findKnowledgeSourceByIdAndOwner: async () => null,
+    updateKnowledgeSourceIfVersionAndLeaseAvailable: async (...args: unknown[]) => {
+      calls.push(args);
+      return updated;
+    },
+    deleteKnowledgeSourceByIdAndOwner: async () => null,
+    deleteKnowledgeSourceByIdAndOwnerIfNotIndexing: async () => null,
+    findKnowledgeSourceForIndexing: async () => null,
+    claimKnowledgeSourceIndexing: async () => null,
+    finalizeKnowledgeSourceIndexing: async () => null,
+  };
+  const now = new Date("2030-01-01T00:00:05.000Z");
+
+  const result = await updateKnowledgeSourceForUser(
+    ownerId,
+    sourceId.toString(),
+    {
+      title: "Updated title",
+      content: "Updated content is long enough.",
+      expectedContentVersion: 1,
+    },
+    repository,
+    () => now,
+  );
+
+  assert.deepEqual(calls, [[
+    ownerId,
+    sourceId.toString(),
+    {
+      title: "Updated title",
+      content: "Updated content is long enough.",
+      expectedContentVersion: 1,
+    },
+    now,
+  ]]);
+  assert.equal(result.contentVersion, 2);
+  assert.equal(result.processingStatus, "pending");
+});
+
+test("source edit conflicts distinguish stale versions, active failed leases, and missing owners", async () => {
+  const input = {
+    title: "Updated title",
+    content: "Updated content is long enough.",
+    expectedContentVersion: 1,
+  };
+  const baseRepository = {
+    createKnowledgeSource: async () => source(),
+    findKnowledgeSourcesByOwner: async () => [],
+    countKnowledgeSourcesByOwner: async () => 0,
+    findKnowledgeSourceByIdAndOwner: async () => null,
+    updateKnowledgeSourceIfVersionAndLeaseAvailable: async () => null,
+    deleteKnowledgeSourceByIdAndOwner: async () => null,
+    deleteKnowledgeSourceByIdAndOwnerIfNotIndexing: async () => null,
+    claimKnowledgeSourceIndexing: async () => null,
+    finalizeKnowledgeSourceIndexing: async () => null,
+  };
+  const now = new Date("2030-01-01T00:00:05.000Z");
+
+  await assert.rejects(
+    updateKnowledgeSourceForUser(
+      ownerId,
+      sourceId.toString(),
+      input,
+      {
+        ...baseRepository,
+        findKnowledgeSourceForIndexing: async () => source(ownerId, { contentVersion: 2 }),
+      },
+      () => now,
+    ),
+    (error: unknown) => error instanceof Error && "code" in error && error.code === "SOURCE_VERSION_CONFLICT",
+  );
+  await assert.rejects(
+    updateKnowledgeSourceForUser(
+      ownerId,
+      sourceId.toString(),
+      input,
+      {
+        ...baseRepository,
+        findKnowledgeSourceForIndexing: async () =>
+          source(ownerId, {
+            processingStatus: "failed",
+            indexingLeaseExpiresAt: new Date("2030-01-01T00:01:00.000Z"),
+          }),
+      },
+      () => now,
+    ),
+    (error: unknown) =>
+      error instanceof Error && "code" in error && error.code === "SOURCE_INDEXING_IN_PROGRESS",
+  );
+  await assert.rejects(
+    updateKnowledgeSourceForUser(ownerId, otherOwnerId, input, {
+      ...baseRepository,
+      findKnowledgeSourceForIndexing: async () => null,
+    }, () => now),
+    (error: unknown) => error instanceof Error && "code" in error && error.code === "SOURCE_NOT_FOUND",
+  );
+});
+
+test("unchanged source edits preserve the current status and version", async () => {
+  const current = source(ownerId, {
+    title: "Updated title",
+    content: "Updated content is long enough.",
+    contentVersion: 4,
+    processingStatus: "indexed",
+  });
+  let updateCalls = 0;
+  const repository = {
+    createKnowledgeSource: async () => current,
+    findKnowledgeSourcesByOwner: async () => [],
+    countKnowledgeSourcesByOwner: async () => 0,
+    findKnowledgeSourceByIdAndOwner: async () => null,
+    updateKnowledgeSourceIfVersionAndLeaseAvailable: async () => {
+      updateCalls += 1;
+      return current;
+    },
+    deleteKnowledgeSourceByIdAndOwner: async () => null,
+    deleteKnowledgeSourceByIdAndOwnerIfNotIndexing: async () => null,
+    findKnowledgeSourceForIndexing: async () => current,
+    claimKnowledgeSourceIndexing: async () => null,
+    finalizeKnowledgeSourceIndexing: async () => null,
+  };
+
+  const result = await updateKnowledgeSourceForUser(
+    ownerId,
+    sourceId.toString(),
+    {
+      title: "Updated title",
+      content: "Updated content is long enough.",
+      expectedContentVersion: 4,
+    },
+    repository,
+  );
+
+  assert.equal(updateCalls, 1);
+  assert.equal(result.contentVersion, 4);
+  assert.equal(result.processingStatus, "indexed");
 });

@@ -5,12 +5,14 @@ import {
   deleteKnowledgeSourceForUser,
   getKnowledgeSourceForUser,
   listKnowledgeSourcesForUser,
+  updateKnowledgeSourceForUser,
 } from "../services/knowledge-source.service.js";
 import { indexKnowledgeSourceForUser } from "../services/knowledge-source-indexing.service.js";
 import type {
   CreateKnowledgeSourceInput,
   KnowledgeSourceParams,
   ListKnowledgeSourcesQuery,
+  UpdateKnowledgeSourceInput,
 } from "../validation/knowledge-source.validation.js";
 
 function requireOwnerId(request: Request): string {
@@ -57,6 +59,19 @@ export async function deleteKnowledgeSource(
     success: true,
     data: { message: "Knowledge source deleted" },
   });
+}
+
+export async function updateKnowledgeSource(
+  request: Request<Record<string, string>, unknown, UpdateKnowledgeSourceInput>,
+  response: Response,
+): Promise<void> {
+  const params = response.locals.knowledgeSourceParams as KnowledgeSourceParams;
+  const source = await updateKnowledgeSourceForUser(
+    requireOwnerId(request),
+    params.sourceId,
+    request.body,
+  );
+  response.status(200).json({ success: true, data: { source } });
 }
 
 export async function indexKnowledgeSource(

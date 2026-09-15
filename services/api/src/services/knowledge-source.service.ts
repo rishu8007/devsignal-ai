@@ -10,11 +10,13 @@ import {
   claimKnowledgeSourceIndexing,
   findKnowledgeSourceByIdAndOwner,
   findKnowledgeSourcesByOwner,
+  updateKnowledgeSourceIfVersionAndLeaseAvailable,
 } from "../repositories/knowledge-source.repository.js";
 import type { KnowledgeSourceDocument } from "../models/knowledge-source.model.js";
 import type {
   CreateKnowledgeSourceInput,
   ListKnowledgeSourcesQuery,
+  UpdateKnowledgeSourceInput,
 } from "../validation/knowledge-source.validation.js";
 
 export interface PublicKnowledgeSourceDto {
@@ -42,6 +44,7 @@ export interface KnowledgeSourceRepositoryBoundary {
   findKnowledgeSourcesByOwner: typeof findKnowledgeSourcesByOwner;
   countKnowledgeSourcesByOwner: typeof countKnowledgeSourcesByOwner;
   findKnowledgeSourceByIdAndOwner: typeof findKnowledgeSourceByIdAndOwner;
+  updateKnowledgeSourceIfVersionAndLeaseAvailable?: typeof updateKnowledgeSourceIfVersionAndLeaseAvailable;
   deleteKnowledgeSourceByIdAndOwner: typeof deleteKnowledgeSourceByIdAndOwner;
   deleteKnowledgeSourceByIdAndOwnerIfNotIndexing: typeof deleteKnowledgeSourceByIdAndOwnerIfNotIndexing;
   findKnowledgeSourceForIndexing: typeof findKnowledgeSourceForIndexing;
@@ -54,6 +57,7 @@ const defaultRepository: KnowledgeSourceRepositoryBoundary = {
   findKnowledgeSourcesByOwner,
   countKnowledgeSourcesByOwner,
   findKnowledgeSourceByIdAndOwner,
+  updateKnowledgeSourceIfVersionAndLeaseAvailable,
   deleteKnowledgeSourceByIdAndOwner,
   deleteKnowledgeSourceByIdAndOwnerIfNotIndexing,
   findKnowledgeSourceForIndexing,
@@ -144,4 +148,35 @@ export async function deleteKnowledgeSourceForUser(
     }
     throw sourceNotFound();
   }
+}
+
+export async function updateKnowledgeSourceForUser(
+  ownerId: string,
+  sourceId: string,
+  input: UpdateKnowledgeSourceInput,
+  repository: KnowledgeSourceRepositoryBoundary = defaultRepository,
+  now: () => Date = () => new Date(),
+): Promise<PublicKnowledgeSourceDto> {
+  assertValidOwnerId(ownerId);
+  if (!repository.updateKnowledgeSourceIfVersionAndLeaseAvailable) {
+    throw new AppError(500, "INTERNAL_ERROR", "Knowledge source update is unavailable");
+  }
+  const updated = await repository.updateKnowledgeSourceIfVersionAndLeaseAvailable(
+    ownerId,
+    sourceId,
+    input,
+    now(),
+  );
+  if (updated) {
+    return toPublicKnowledgeSourceDto(updated);
+  }
+
+  const current = await repository.findKnowledgeSourceForIndexing(ownerId, sourceId);
+  if (!current) {
+    throw sourceNotFound();
+  }
+  if ((current.indexingLeaseExpiresAt ?? new Date(0)) > now()) {
+    throw new AppError(409, "SOURCE_INDEXING_IN_PROGRESS", "Knowledge source indexing is in progress");
+  }
+  throw new AppError(409, "SOURCE_VERSION_CONFLICT", "Knowledge source changed; reload before saving");
 }

@@ -88,6 +88,34 @@ test("filters cross-owner, stale, deleted, non-indexed, and duplicate candidates
   assert.equal(results[0]?.chunkId, `${sourceId}_v2_c0`);
 });
 
+test("edited pending sources exclude old indexed candidates until the new version is indexed", async () => {
+  const results = await searchKnowledgeSourcesForUser(
+    ownerId,
+    "fix",
+    5,
+    {
+      retrieve: async () => [
+        candidate({
+          contentVersion: 1,
+          chunkId: `${sourceId}_v1_c0`,
+        }),
+      ],
+    },
+    repository([
+      source(sourceId, {
+        contentVersion: 2,
+        processingStatus: "pending",
+        indexedContentVersion: null,
+        indexedChunkerVersion: null,
+        indexedEmbeddingModel: null,
+        indexedDimensions: null,
+      }),
+    ]),
+  );
+
+  assert.deepEqual(results, []);
+});
+
 test("allows fewer results and preserves ranking after validation", async () => {
   const results = await searchKnowledgeSourcesForUser(
     ownerId,

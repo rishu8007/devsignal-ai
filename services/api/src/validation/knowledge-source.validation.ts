@@ -1,17 +1,28 @@
 import { z } from "zod";
 
+const titleSchema = z
+  .string()
+  .trim()
+  .min(1, "Title must contain at least 1 character")
+  .max(120, "Title must contain at most 120 characters");
+const contentSchema = z
+  .string()
+  .trim()
+  .min(10, "Content must contain at least 10 characters")
+  .max(20_000, "Content must contain at most 20000 characters");
+
 export const createKnowledgeSourceSchema = z
   .object({
-    title: z
-      .string()
-      .trim()
-      .min(1, "Title must contain at least 1 character")
-      .max(120, "Title must contain at most 120 characters"),
-    content: z
-      .string()
-      .trim()
-      .min(10, "Content must contain at least 10 characters")
-      .max(20_000, "Content must contain at most 20000 characters"),
+    title: titleSchema,
+    content: contentSchema,
+  })
+  .strict();
+
+export const updateKnowledgeSourceSchema = z
+  .object({
+    title: titleSchema,
+    content: contentSchema,
+    expectedContentVersion: z.number().int().positive(),
   })
   .strict();
 
@@ -34,5 +45,6 @@ export const knowledgeSourceParamsSchema = z
   .strict();
 
 export type CreateKnowledgeSourceInput = z.infer<typeof createKnowledgeSourceSchema>;
+export type UpdateKnowledgeSourceInput = z.infer<typeof updateKnowledgeSourceSchema>;
 export type ListKnowledgeSourcesQuery = z.infer<typeof listKnowledgeSourcesQuerySchema>;
 export type KnowledgeSourceParams = z.infer<typeof knowledgeSourceParamsSchema>;

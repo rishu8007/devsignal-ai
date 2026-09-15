@@ -6,6 +6,7 @@ import {
   getKnowledgeSource,
   listKnowledgeSources,
   indexKnowledgeSource,
+  updateKnowledgeSource,
 } from "../controllers/knowledge-source.controller.js";
 import { authenticationMiddleware } from "../middleware/authentication.middleware.js";
 import {
@@ -15,6 +16,7 @@ import {
 } from "../middleware/validate-request.middleware.js";
 import {
   createKnowledgeSourceSchema,
+  updateKnowledgeSourceSchema,
   knowledgeSourceParamsSchema,
   listKnowledgeSourcesQuerySchema,
   type KnowledgeSourceParams,
@@ -43,5 +45,11 @@ knowledgeSourceRouter.get(
   listKnowledgeSources,
 );
 knowledgeSourceRouter.get("/:sourceId", validateSourceParams, getKnowledgeSource);
+knowledgeSourceRouter.patch(
+  "/:sourceId",
+  validateSourceParams,
+  validateRequest(updateKnowledgeSourceSchema),
+  updateKnowledgeSource,
+);
 knowledgeSourceRouter.post("/:sourceId/index", validateSourceParams, validateRequest(z.object({}).strict()), indexKnowledgeSource);
 knowledgeSourceRouter.delete("/:sourceId", validateSourceParams, deleteKnowledgeSource);

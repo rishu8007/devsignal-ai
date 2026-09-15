@@ -56,6 +56,12 @@ interface KnowledgeSourceDeleteEnvelope {
   data: { message: "Knowledge source deleted" };
 }
 
+export interface UpdateKnowledgeSourceInput {
+  title: string;
+  content: string;
+  expectedContentVersion: number;
+}
+
 interface KnowledgeSearchEnvelope {
   success: true;
   data: KnowledgeSearchResponse;
@@ -120,6 +126,18 @@ function isKnowledgeSourceDeleteResponse(
     isRecord(value.data) &&
     value.data.message === "Knowledge source deleted"
   );
+}
+
+export function updateKnowledgeSource(
+  sourceId: string,
+  payload: UpdateKnowledgeSourceInput,
+  signal?: AbortSignal,
+): Promise<PublicKnowledgeSource> {
+  return request(
+    `/sources/${encodeURIComponent(sourceId)}`,
+    { method: "PATCH", body: JSON.stringify(payload), signal },
+    isKnowledgeSourceResponse,
+  ).then((response) => response.data.source);
 }
 
 function isKnowledgeSearchCandidate(value: unknown): value is KnowledgeSearchCandidate {

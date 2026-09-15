@@ -38,6 +38,7 @@ export function DashboardWorkspace() {
   const [generationLoading, setGenerationLoading] = useState(false);
   const [generationError, setGenerationError] = useState<string | null>(null);
   const [generationPending, setGenerationPending] = useState(false);
+  const [useKnowledge, setUseKnowledge] = useState(false);
   const [mutationPending, setMutationPending] = useState(false);
   const [mutationError, setMutationError] = useState<string | null>(null);
   const [mutationUncertain, setMutationUncertain] = useState(false);
@@ -183,6 +184,7 @@ export function DashboardWorkspace() {
         if (current && !result.signals.some((signal) => signal.id === current.id)) {
           generationController.current?.abort();
           setGeneration(null);
+          setUseKnowledge(false);
           setGenerationError(null);
           setMutationError(null);
           setMutationUncertain(false);
@@ -248,20 +250,21 @@ export function DashboardWorkspace() {
     if (generationPending || mutationPending || editingVariationId !== null) return;
     setSelectedSignal(signal);
     setGeneration(null);
+    setUseKnowledge(false);
     setEditingVariationId(null);
     setEditorContent("");
     void loadGeneration(signal);
   }, [editingVariationId, generationPending, loadGeneration, mutationPending]);
 
   const handleGenerate = useCallback(async () => {
-    if (!selectedSignal || generationPending || mutationPending) return;
+    if (!selectedSignal || generation || generationPending || mutationPending) return;
     setGenerationPending(true);
     setGenerationError(null);
     setGenerationOutcomeUncertain(false);
     setMutationError(null);
     setMutationUncertain(false);
     try {
-      const result = await createGeneration(selectedSignal.id);
+      const result = await createGeneration(selectedSignal.id, useKnowledge);
       if (!mounted.current) return;
       setGeneration(result);
       refreshDraftLibrary();
@@ -279,6 +282,13 @@ export function DashboardWorkspace() {
         setGenerationError("Generation may still be processing. Check for saved drafts before trying again.");
       } else if (error instanceof ApiClientError && error.code === "AI_GENERATION_REFUSED") {
         setGenerationError("The requested drafts could not be generated.");
+      } else if (
+        error instanceof ApiClientError &&
+        error.code === "GENERATION_KNOWLEDGE_UNAVAILABLE"
+      ) {
+        setGenerationError(
+          "No usable indexed knowledge context was found for this Signal. Your knowledge option remains selected.",
+        );
       } else if (error instanceof ApiClientError && error.code === "GENERATION_RATE_LIMIT_EXCEEDED") {
         setGenerationError("Generation is temporarily limited. Please try again later.");
       } else {
@@ -287,7 +297,15 @@ export function DashboardWorkspace() {
     } finally {
       if (mounted.current) setGenerationPending(false);
     }
-  }, [generationPending, invalidateSession, mutationPending, refreshDraftLibrary, selectedSignal]);
+  }, [
+    generation,
+    generationPending,
+    invalidateSession,
+    mutationPending,
+    refreshDraftLibrary,
+    selectedSignal,
+    useKnowledge,
+  ]);
 
   const handleStartEditing = useCallback((variation: PublicDraft) => {
     if (mutationPending || editingVariationId !== null) return;
@@ -345,6 +363,7 @@ export function DashboardWorkspace() {
       } else if (error instanceof ApiClientError && error.code === "SIGNAL_NOT_FOUND") {
         setSelectedSignal(null);
         setGeneration(null);
+        setUseKnowledge(false);
         setEditingVariationId(null);
         setEditorContent("");
         setMutationError("This Signal is no longer available.");
@@ -601,6 +620,8 @@ export function DashboardWorkspace() {
           <DraftStudio
         signalTopic={selectedSignal?.topic ?? null}
         generation={generation}
+        useKnowledge={useKnowledge}
+        onUseKnowledgeChange={setUseKnowledge}
         loading={generationLoading}
         generating={generationPending}
         mutationPending={mutationPending}

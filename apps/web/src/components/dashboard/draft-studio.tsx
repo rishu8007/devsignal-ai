@@ -10,6 +10,8 @@ import { CopyDraftButton } from "@/components/dashboard/copy-draft-button";
 interface DraftStudioProps {
   signalTopic: string | null;
   generation: PublicGeneration | null;
+  useKnowledge: boolean;
+  onUseKnowledgeChange: (value: boolean) => void;
   loading: boolean;
   generating: boolean;
   mutationPending: boolean;
@@ -41,6 +43,8 @@ const MAX_CONTENT_LENGTH = 3000;
 export function DraftStudio({
   signalTopic,
   generation,
+  useKnowledge,
+  onUseKnowledgeChange,
   loading,
   generating,
   mutationPending,
@@ -93,6 +97,12 @@ export function DraftStudio({
         </p>
       )}
       {signalTopic && <p className="mt-2 text-base font-medium text-slate-900">{signalTopic}</p>}
+      {signalTopic && generation?.usedKnowledge && (
+        <p className="mx-auto mt-3 max-w-2xl text-xs leading-5 text-slate-500">
+          This Generation used indexed knowledge when it was created. References are supporting sources,
+          not verified facts.
+        </p>
+      )}
       {signalTopic && (
         <p className="mt-3 text-xs leading-5 text-slate-500">
           Planned dates are manual publishing plans. Nothing publishes automatically. Your timezone:{" "}
@@ -121,6 +131,23 @@ export function DraftStudio({
           <p className="mt-5 text-sm text-slate-500">
             No drafts have been generated for this Signal.
           </p>
+          <label className="mx-auto mt-5 flex max-w-md items-start gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-left">
+            <input
+              type="checkbox"
+              checked={useKnowledge}
+              onChange={(event) => onUseKnowledgeChange(event.target.checked)}
+              disabled={generating || mutationPending}
+              className="mt-0.5 size-4 accent-indigo-600"
+            />
+            <span>
+              <span className="block text-sm font-semibold text-slate-800">
+                Use my knowledge notes
+              </span>
+              <span className="mt-1 block text-xs leading-5 text-slate-500">
+                Uses your indexed notes as supporting context and may add retrieval or provider cost.
+              </span>
+            </span>
+          </label>
           <button
             type="button"
             onClick={onGenerate}
@@ -167,9 +194,9 @@ export function DraftStudio({
                         </span>
                       )}
                     </div>
-                    {isApproved && (
+                    {(isApproved || variation.sourceCitations.length > 0) && (
                       <p className="mt-3 text-xs leading-5 text-amber-800">
-                        Saving edits to an approved draft resets its approval to Draft and removes its planned date.
+                        Saving edits clears source references, resets approval to Draft, and removes the planned date.
                       </p>
                     )}
                     {mutationError && (
@@ -202,6 +229,23 @@ export function DraftStudio({
                     <p className="mt-4 whitespace-pre-wrap break-words text-sm leading-7 text-slate-700">
                       {variation.content}
                     </p>
+                    {variation.sourceCitations.length > 0 && (
+                      <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+                          Supporting sources
+                        </p>
+                        <p className="mt-1 text-xs leading-5 text-slate-500">
+                          These references provide supporting context, not verified facts.
+                        </p>
+                        <ul className="mt-2 space-y-1 text-sm text-slate-700">
+                          {variation.sourceCitations.map((citation) => (
+                            <li key={citation.chunkId}>
+                              {citation.title} (version {citation.contentVersion})
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
                     <div className="mt-4 flex flex-wrap gap-3">
                       <button
                         type="button"

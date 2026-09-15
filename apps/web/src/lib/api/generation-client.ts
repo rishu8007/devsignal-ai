@@ -6,18 +6,29 @@ import type { PublicSignal } from "@/lib/api/signal-client";
 export type GenerationAngle = "technical_depth" | "learning_story" | "professional_impact";
 export type DraftStatus = "draft" | "approved";
 
+export interface PublicSourceCitation {
+  sourceId: string;
+  title: string;
+  contentVersion: number;
+  chunkId: string;
+  startOffset: number;
+  endOffset: number;
+}
+
 export interface PublicDraft {
   id: string;
   angle: GenerationAngle;
   content: string;
   status: DraftStatus;
   scheduledFor: string | null;
+  sourceCitations: PublicSourceCitation[];
 }
 
 export interface PublicGeneration {
   id: string;
   signalId: string;
   model: string;
+  usedKnowledge: boolean;
   variations: PublicDraft[];
   createdAt: string;
   updatedAt: string;
@@ -40,6 +51,25 @@ function isGenerationAngle(value: unknown): value is GenerationAngle {
   );
 }
 
+function isSourceCitation(value: unknown): value is PublicSourceCitation {
+  if (!isRecord(value)) return false;
+  const { contentVersion, startOffset, endOffset } = value;
+  return (
+    typeof value.sourceId === "string" &&
+    typeof value.title === "string" &&
+    typeof contentVersion === "number" &&
+    Number.isInteger(contentVersion) &&
+    contentVersion > 0 &&
+    typeof value.chunkId === "string" &&
+    typeof startOffset === "number" &&
+    Number.isInteger(startOffset) &&
+    startOffset >= 0 &&
+    typeof endOffset === "number" &&
+    Number.isInteger(endOffset) &&
+    endOffset > startOffset
+  );
+}
+
 function isGeneration(value: unknown): value is PublicGeneration {
   if (!isRecord(value) || typeof value.id !== "string" || typeof value.signalId !== "string") {
     return false;
@@ -49,6 +79,7 @@ function isGeneration(value: unknown): value is PublicGeneration {
   }
   const angles = new Set<GenerationAngle>();
   return (
+    (value.usedKnowledge === undefined || typeof value.usedKnowledge === "boolean") &&
     typeof value.createdAt === "string" &&
     typeof value.updatedAt === "string" &&
     value.variations.length === 3 &&
@@ -64,6 +95,9 @@ function isGeneration(value: unknown): value is PublicGeneration {
         (variation.scheduledFor === undefined ||
           variation.scheduledFor === null ||
           typeof variation.scheduledFor === "string") &&
+        (variation.sourceCitations === undefined ||
+          (Array.isArray(variation.sourceCitations) &&
+            variation.sourceCitations.every(isSourceCitation))) &&
         !angles.has(variation.angle) &&
         angles.add(variation.angle)
       );
@@ -75,9 +109,18 @@ function isGeneration(value: unknown): value is PublicGeneration {
 function normalizeGeneration(value: PublicGeneration): PublicGeneration {
   return {
     ...value,
+    usedKnowledge: value.usedKnowledge ?? false,
     variations: value.variations.map((variation) => ({
       ...variation,
       scheduledFor: variation.scheduledFor ?? null,
+      sourceCitations: variation.sourceCitations?.map((citation) => ({
+        sourceId: citation.sourceId,
+        title: citation.title,
+        contentVersion: citation.contentVersion,
+        chunkId: citation.chunkId,
+        startOffset: citation.startOffset,
+        endOffset: citation.endOffset,
+      })) ?? [],
     })),
   };
 }
@@ -102,10 +145,13 @@ export function getGeneration(
   ).then((response) => normalizeGeneration(response.data.generation));
 }
 
-export function createGeneration(signalId: string): Promise<PublicGeneration> {
+export function createGeneration(
+  signalId: string,
+  useKnowledge = false,
+): Promise<PublicGeneration> {
   return request(
     `/signals/${encodeURIComponent(signalId)}/generations`,
-    { method: "POST", body: "{}", timeoutMs: 160_000 },
+    { method: "POST", body: JSON.stringify({ useKnowledge }), timeoutMs: 160_000 },
     isGenerationResponse,
   ).then((response) => normalizeGeneration(response.data.generation));
 }

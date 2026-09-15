@@ -47,3 +47,31 @@ internal AI service and validates each candidate against MongoDB before
 returning it. The returned score is a similarity score, not factual
 confidence. MongoDB validation is a point-in-time check; a source can change
 immediately after validation.
+
+### Signal editing and Generation persistence
+
+Signals can be edited before a Generation exists. Updates include the
+expected Signal revision and are rejected on an owner, revision, Generation,
+or active-reservation conflict.
+
+Generation claims create an expiring `generating` reservation. After provider
+output is validated, the API atomically changes the matching Signal revision
+and reservation token to non-expiring `persisting` state. That transition
+requires the lease to remain unexpired. A Generation is inserted only after
+the transition succeeds. Persisting reservations block Signal edits and new
+claims regardless of elapsed time; successful persistence conditionally stores
+the Generation ID and clears the reservation.
+
+Existing Generations are reused without invoking generation. The saved-draft
+lookup is also the reconciliation entry point: when it finds a Generation, the
+API conditionally repairs matching persisting protection before returning the
+saved result. An empty lookup does not prove that an outstanding write cannot
+complete.
+
+`GENERATION_PERSISTENCE_UNCERTAIN` means the Generation save outcome is
+unresolved, not that generation is definitely still running. The API retains
+persisting protection and does not automatically unlock it based on elapsed
+time or an empty lookup. A crash before insertion may therefore require
+operational investigation and reconciliation; routine manual clearing is not
+safe. The lifecycle tests use injected repositories and clocks, so they do not
+prove live distributed race behavior.

@@ -64,6 +64,17 @@ If a Generation already exists, opening it loads the saved result. Generations
 are reused; selecting the knowledge option does not regenerate an existing
 Generation.
 
+Generation claims use a short-lived reservation while provider work runs.
+Validated output must atomically move that reservation to a non-expiring
+persisting state before the Generation is saved. Persisting protection blocks
+Signal edits and new claims until the Generation ID is recorded or the saved
+Generation is found through the existing draft lookup reconciliation path.
+`GENERATION_PERSISTENCE_UNCERTAIN` means the save outcome is unresolved; an
+empty lookup is not proof that a delayed write cannot complete, so do not
+manually clear protection as routine recovery. A crash before insertion can
+require operational investigation. Mocked lifecycle tests do not prove live
+distributed race behavior.
+
 ### 3. Inspect supporting sources
 
 Under a generated variation, select a supporting-source reference. The inline

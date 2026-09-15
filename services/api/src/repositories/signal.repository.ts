@@ -58,7 +58,7 @@ export function updateSignalIfEditable(
       $or: [
         { generationLeaseId: null },
         {
-          generationLeaseState: { $in: ["generating", null] },
+          generationLeaseState: "generating",
           generationLeaseExpiresAt: { $lte: now },
         },
       ],
@@ -102,7 +102,7 @@ export function reserveSignalForGeneration(
       $set: {
         generationLeaseId: leaseId,
         generationLeaseExpiresAt: leaseExpiresAt,
-        generationLeaseState: { $in: ["generating", null] },
+        generationLeaseState: "generating",
       },
     },
     { new: true },

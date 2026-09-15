@@ -92,6 +92,12 @@ publishing plans; nothing publishes automatically.
 
 Use the **Calendar** tab to inspect planned items and **Remove from calendar**
 to clear a plan. Approval and scheduling preserve any remaining references.
+In Draft Studio, choose **Download Markdown** beside **Copy draft** to
+download the saved variation as a UTF-8 Markdown file. The export includes
+the Signal topic, variation/status metadata, saved content, planned date when
+present, and supporting-reference metadata. It does not contain a historical
+source snapshot; references identify provenance and the source text may have
+changed since generation.
 
 ## What is happening under the hood
 

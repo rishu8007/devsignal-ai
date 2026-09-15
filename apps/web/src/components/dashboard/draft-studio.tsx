@@ -12,6 +12,7 @@ import type {
   PublicSourceCitation,
 } from "@/lib/api/generation-client";
 import { CopyDraftButton } from "@/components/dashboard/copy-draft-button";
+import { downloadDraftMarkdown } from "@/lib/markdown-export";
 
 interface DraftStudioProps {
   signalTopic: string | null;
@@ -80,6 +81,10 @@ export function DraftStudio({
   const [currentSource, setCurrentSource] = useState<PublicKnowledgeSource | null>(null);
   const [sourceLoading, setSourceLoading] = useState(false);
   const [sourceError, setSourceError] = useState<string | null>(null);
+  const [exportFeedback, setExportFeedback] = useState<{
+    variationId: string;
+    status: "started" | "failed";
+  } | null>(null);
   const sourceRequestId = useRef(0);
   const sourceController = useRef<AbortController | null>(null);
   const sourceButtons = useRef<Record<string, HTMLButtonElement | null>>({});
@@ -157,6 +162,19 @@ export function DraftStudio({
       selectedSource.variationId,
     );
   }, [inspectSource, selectedSource]);
+
+  const handleDownloadMarkdown = useCallback(
+    (variation: PublicDraft) => {
+      if (mutationPending || editingVariationId === variation.id) return;
+      try {
+        downloadDraftMarkdown(signalTopic ?? "Draft", variation);
+        setExportFeedback({ variationId: variation.id, status: "started" });
+      } catch {
+        setExportFeedback({ variationId: variation.id, status: "failed" });
+      }
+    },
+    [editingVariationId, mutationPending, signalTopic],
+  );
 
   return (
     <section
@@ -430,7 +448,27 @@ export function DraftStudio({
                         content={variation.content}
                         disabled={mutationPending}
                       />
+                      <button
+                        type="button"
+                        onClick={() => handleDownloadMarkdown(variation)}
+                        disabled={mutationPending}
+                        className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        Download Markdown
+                      </button>
                     </div>
+                    {exportFeedback?.variationId === variation.id && (
+                      <p
+                        className={`mt-3 text-sm ${
+                          exportFeedback.status === "started" ? "text-teal-700" : "text-red-700"
+                        }`}
+                        role={exportFeedback.status === "started" ? "status" : "alert"}
+                      >
+                        {exportFeedback.status === "started"
+                          ? "Markdown download initiated. Check your browser downloads."
+                          : "Unable to start the Markdown download."}
+                      </p>
+                    )}
                     {isApproved && (
                       <ScheduleControls
                         variationId={variation.id}

@@ -96,6 +96,9 @@ publishing plans; nothing publishes automatically.
 
 Use the **Calendar** tab to inspect planned items and **Remove from calendar**
 to clear a plan. Approval and scheduling preserve any remaining references.
+For a scheduled item, choose **Download calendar reminder** to create a
+manual publishing reminder as an `.ics` file. Calendar applications control
+whether repeated imports create duplicates or update an existing reminder.
 In Draft Studio, choose **Download Markdown** beside **Copy draft** to
 download the saved variation as a UTF-8 Markdown file. The export includes
 the Signal topic, variation/status metadata, saved content, planned date when

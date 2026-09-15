@@ -1,5 +1,7 @@
 import type { PublicCalendarItem } from "@/lib/api/calendar-client";
 import { CopyDraftButton } from "@/components/dashboard/copy-draft-button";
+import { downloadCalendarReminder } from "@/lib/icalendar-export";
+import { useState } from "react";
 
 const labels = {
   technical_depth: "Technical depth",
@@ -30,6 +32,20 @@ export function CalendarView({
   onRetry: () => void;
   onOpen: (item: PublicCalendarItem) => void;
 }) {
+  const [exportFeedback, setExportFeedback] = useState<{
+    itemId: string;
+    status: "started" | "failed";
+  } | null>(null);
+
+  function handleDownload(item: PublicCalendarItem): void {
+    try {
+      downloadCalendarReminder(item);
+      setExportFeedback({ itemId: item.id, status: "started" });
+    } catch {
+      setExportFeedback({ itemId: item.id, status: "failed" });
+    }
+  }
+
   return (
     <section aria-labelledby="calendar-heading" className="mt-8">
       <div className="flex flex-wrap items-end justify-between gap-4">
@@ -81,7 +97,26 @@ export function CalendarView({
                 <div className="mt-4 flex flex-wrap gap-3">
                   <button type="button" onClick={() => onOpen(item)} className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white">Open in Draft Studio</button>
                   <CopyDraftButton content={item.content} />
+                  <button
+                    type="button"
+                    onClick={() => handleDownload(item)}
+                    className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700"
+                  >
+                    Download calendar reminder
+                  </button>
                 </div>
+                {exportFeedback?.itemId === item.id && (
+                  <p
+                    className={`mt-3 text-sm ${
+                      exportFeedback.status === "started" ? "text-teal-700" : "text-red-700"
+                    }`}
+                    role={exportFeedback.status === "started" ? "status" : "alert"}
+                  >
+                    {exportFeedback.status === "started"
+                      ? "Calendar reminder download initiated. Check your browser downloads."
+                      : "Unable to start the calendar reminder download."}
+                  </p>
+                )}
               </article>
             ))}
           </div>

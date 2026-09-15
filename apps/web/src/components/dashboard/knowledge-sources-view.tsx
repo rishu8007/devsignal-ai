@@ -56,6 +56,9 @@ export function KnowledgeSourcesView({
   const listQueryKey = useRef("");
   const listDataRef = useRef<KnowledgeSourceListResponse | null>(null);
   const mounted = useRef(true);
+  const detailHeadingRef = useRef<HTMLHeadingElement>(null);
+  const viewDetailsButtonRef = useRef<HTMLButtonElement | null>(null);
+  const navigationIntentId = useRef(0);
 
   const titleLength = title.trim().length;
   const contentLength = content.trim().length;
@@ -94,6 +97,8 @@ export function KnowledgeSourcesView({
     detailRequestId.current += 1;
     listQueryKey.current = "";
     listDataRef.current = null;
+    navigationIntentId.current = 0;
+    viewDetailsButtonRef.current = null;
     setSourceList(null);
     setPage(1);
     setListError(null);
@@ -171,9 +176,10 @@ export function KnowledgeSourcesView({
     void loadSources(page, true);
   }, [loadSources, page]);
 
-  const handleViewDetails = useCallback(async (source: PublicKnowledgeSource) => {
+  const handleViewDetails = useCallback(async (source: PublicKnowledgeSource, originButton?: HTMLButtonElement | null) => {
     if (indexing) return;
     const requestNumber = ++detailRequestId.current;
+    const intentId = ++navigationIntentId.current;
     detailController.current?.abort();
     const controller = new AbortController();
     detailController.current = controller;
@@ -183,10 +189,21 @@ export function KnowledgeSourcesView({
     setDetailError(null);
     setIndexingConfirm(false);
     setIndexingError(null);
+    viewDetailsButtonRef.current = originButton ?? null;
     try {
       const result = await getKnowledgeSource(source.id, controller.signal);
       if (!mounted.current || requestNumber !== detailRequestId.current) return;
       setSelectedSource(result);
+      // Schedule scroll and focus for next render, only if this was the user's intended navigation
+      if (intentId === navigationIntentId.current) {
+        window.setTimeout(() => {
+          if (detailHeadingRef.current && mounted.current) {
+            const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+            detailHeadingRef.current.scrollIntoView({ behavior: prefersReducedMotion ? "auto" : "smooth", block: "start" });
+            detailHeadingRef.current.focus({ preventScroll: true });
+          }
+        }, 0);
+      }
     } catch (error: unknown) {
       if (error instanceof ApiClientError && error.code === "REQUEST_ABORTED") return;
       if (!mounted.current || requestNumber !== detailRequestId.current) return;
@@ -513,11 +530,16 @@ export function KnowledgeSourcesView({
                   </span>
                 </div>
                 <p className="mt-3 text-sm text-slate-600">
-                  {source.processingStatus === "indexed" ? "Indexed and ready for use." : "Ready to index for AI use."}
+                  {source.processingStatus === "indexed"
+                    ? "Indexed and ready for use."
+                    : source.processingStatus === "failed"
+                      ? "Indexing failed. Review the status and retry when ready."
+                      : "Ready to index for AI use."}
                 </p>
                 <button
+                  ref={(ref) => { if (ref) viewDetailsButtonRef.current = ref; }}
                   type="button"
-                  onClick={() => void handleViewDetails(source)}
+                  onClick={(e) => void handleViewDetails(source, (e.currentTarget as HTMLButtonElement) ?? null)}
                   className="mt-4 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white"
                 >
                   View details
@@ -557,7 +579,12 @@ export function KnowledgeSourcesView({
             <div className="flex items-start justify-between gap-3">
               <div>
                 <p className="text-sm font-semibold uppercase tracking-[0.16em] text-indigo-600">Source details</p>
-                <h3 id="knowledge-source-detail-heading" className="mt-2 text-xl font-semibold text-slate-900">
+                <h3
+                  ref={detailHeadingRef}
+                  id="knowledge-source-detail-heading"
+                  className="mt-2 text-xl font-semibold text-slate-900 scroll-mt-32"
+                  tabIndex={-1}
+                >
                   {selectedSource?.title ?? selectedListItem?.title ?? "Knowledge source"}
                 </h3>
               </div>
@@ -567,6 +594,10 @@ export function KnowledgeSourcesView({
                   setSelectedSourceId(null);
                   setSelectedSource(null);
                   detailController.current?.abort();
+                  // Restore focus to the originating button if it still exists
+                  if (viewDetailsButtonRef.current && document.contains(viewDetailsButtonRef.current)) {
+                    viewDetailsButtonRef.current.focus();
+                  }
                 }}
                 className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-600"
               >

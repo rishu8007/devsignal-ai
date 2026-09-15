@@ -136,6 +136,23 @@ Changing the embedding model or chunker requires a separate collection or a
 controlled rebuild; model/chunker migrations are not inferred from dimensions
 alone.
 
+## Retrieval candidates
+
+`app/services/retrieval.py` embeds a bounded search query with the configured
+indexing embedding model and performs an owner-filtered Qdrant search. It never
+creates a collection during retrieval: a missing collection is reported as
+`collection_missing`, while other Qdrant failures remain service errors rather
+than becoming an empty result set. Query text is rejected when blank or larger
+than the embedding provider's 1,000-code-point input limit.
+
+Results are validated for owner, source/version/chunk metadata, finite scores,
+offset consistency, and the configured embedding model. The service returns
+bounded candidate chunks and metadata only; embeddings are not returned.
+These are retrieval candidates, not authoritative sources. Before exposing or
+using them, the Express API must verify current MongoDB ownership, source
+existence, `contentVersion`, and indexed status. This checkpoint does not add
+that validation or connect retrieval to generation.
+
 Embedding model identity is stored with each record. Changing models is not
 automatically compatible merely because dimensions match; use a separate
 collection or a controlled rebuild. Retry behavior is also not transactional

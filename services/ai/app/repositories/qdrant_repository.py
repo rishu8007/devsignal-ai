@@ -207,6 +207,10 @@ class QdrantVectorRepository:
                 with_vectors=False,
                 timeout=self._timeout_seconds,
             )
+        except UnexpectedResponse as exception:
+            if exception.status_code == 404:
+                raise QdrantRepositoryError("collection_missing") from exception
+            raise QdrantRepositoryError("unavailable") from exception
         except ApiException as exception:
             raise QdrantRepositoryError("unavailable") from exception
         return _parse_search_response(response)

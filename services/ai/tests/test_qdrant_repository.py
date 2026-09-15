@@ -312,3 +312,13 @@ async def test_rejects_malformed_search_payload() -> None:
         await repository(client).search(OWNER_ID, [0.1, 0.2, 0.3], 5)
 
     assert exception.value.kind == "invalid_response"
+
+
+@pytest.mark.anyio
+async def test_maps_missing_search_collection_separately() -> None:
+    client = FakeQdrant(operation_error=not_found())
+
+    with pytest.raises(QdrantRepositoryError) as exception:
+        await repository(client).search(OWNER_ID, [0.1, 0.2, 0.3], 5)
+
+    assert exception.value.kind == "collection_missing"

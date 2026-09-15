@@ -48,6 +48,26 @@ Use the status filter above the saved source library to view **All**,
 **Pending**, **Indexing**, **Indexed**, or **Failed** sources. Filtering only
 changes the list view; it does not index, search, or modify notes.
 
+#### Import documentation from a repository ZIP
+
+To import documentation from a local repository archive, download the
+repository ZIP in your browser and choose **Import repository ZIP** beside the
+Knowledge note form. The archive is processed locally; its bytes are not
+uploaded by this feature. Select the `.md` and `.txt` files to include,
+review the plain-text preview and assembled character count, and edit the
+proposed title before choosing **Import into note**. This creates one unsaved
+note in the existing form, so saving and indexing remain explicit actions.
+
+The import is limited to a 5 MiB archive, 500 entries, 50 documentation files,
+100 KiB per file, 1 MiB total extracted documentation, and the existing
+10–20,000-character note content and 1–120-character title limits. Dependency,
+build, VCS, hidden, and obvious credential/private-key paths are skipped;
+review the selected text for secrets because exclusions cannot guarantee
+secret removal. ZIP import does not connect to GitHub, synchronize a
+repository, execute archive contents, import source code, or support PDFs.
+After saving, the existing API, explicit indexing, and embedding-provider
+behavior applies and may incur provider costs.
+
 ### 2. Create a Signal and opt into knowledge
 
 On the **Create** tab, save a Signal with a topic and learning notes. Select
@@ -150,8 +170,9 @@ email addresses, tokens, API keys, database URLs, or private draft content.
 
 - Calendar dates are reminders for manual publishing; there is no automatic
   publishing, scheduler, notification, or completed state.
-- File uploads, GitHub ingestion, autonomous agents, and publishing
-  automation are future work and are not demonstrated here.
+- Remote GitHub ingestion, autonomous agents, and publishing automation are
+  future work and are not demonstrated here. Repository ZIP import is local
+  documentation selection only, not synchronization.
 - Editing clears source references, approval, and the planned date together
   for the edited variation.
 - Scheduled counts include approved variations with past planned dates until

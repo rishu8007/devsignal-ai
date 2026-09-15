@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, FormEvent } from "react";
+import { RepositoryZipImportPanel } from "./repository-zip-import-panel";
 import { ApiClientError } from "@/lib/api/api-client";
 import {
   createKnowledgeSource,
@@ -45,6 +46,7 @@ export function KnowledgeSourcesView({
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [importLoading, setImportLoading] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
+  const [zipImportOpen, setZipImportOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const [sourceList, setSourceList] = useState<KnowledgeSourceListResponse | null>(null);
   const [page, setPage] = useState(1);
@@ -193,6 +195,7 @@ export function KnowledgeSourcesView({
     setSearchError(null);
     setImportLoading(false);
     setImportError(null);
+    setZipImportOpen(false);
   }, []);
 
   useEffect(() => {
@@ -203,7 +206,10 @@ export function KnowledgeSourcesView({
     if (active) return;
     importRequestId.current += 1;
     const timer = window.setTimeout(() => {
-      if (mounted.current) setImportLoading(false);
+      if (mounted.current) {
+        setImportLoading(false);
+        setZipImportOpen(false);
+      }
     }, 0);
     return () => window.clearTimeout(timer);
   }, [active]);
@@ -549,6 +555,40 @@ export function KnowledgeSourcesView({
       }
     }
   }, [active]);
+
+  const handleRepositoryZipImport = useCallback(
+    (
+      importedTitle: string,
+      importedContent: string,
+      initialValues: { title: string; content: string },
+    ) => {
+      if (!active || creating || deleting || indexing || editPending) return false;
+      const currentValues = formValuesRef.current;
+      const changedDuringImport =
+        currentValues.title !== initialValues.title || currentValues.content !== initialValues.content;
+      const hasCurrentInput = currentValues.title.length > 0 || currentValues.content.length > 0;
+      if (
+        (changedDuringImport &&
+          !window.confirm(
+            "The note form changed while the ZIP was loading. Replace the current title and content with this import?",
+          )) ||
+        (!changedDuringImport &&
+          hasCurrentInput &&
+          !window.confirm("Replace the current title and content with this import?"))
+      ) {
+        setImportError("Import canceled; your current note input was preserved.");
+        return false;
+      }
+      setTitle(importedTitle.trim());
+      setContent(importedContent);
+      setTouched({ title: false, content: false });
+      setFormError(null);
+      setSuccessMessage(null);
+      setImportError(null);
+      return true;
+    },
+    [active, creating, deleting, editPending, indexing],
+  );
 
   const handleSaveEdit = useCallback(async () => {
     if (
@@ -962,7 +1002,7 @@ export function KnowledgeSourcesView({
         <form onSubmit={(event) => void handleCreate(event)} className="mt-6 rounded-xl border border-slate-200 bg-white p-5 shadow-sm" noValidate>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h3 className="text-lg font-semibold text-slate-900">Add a knowledge source</h3>
-            <div>
+            <div className="flex flex-wrap gap-2">
               <input
                 ref={importInputRef}
                 id="knowledge-source-file"
@@ -981,12 +1021,30 @@ export function KnowledgeSourcesView({
               >
                 {importLoading ? "Importing..." : "Import text file"}
               </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setImportError(null);
+                  setZipImportOpen(true);
+                }}
+                disabled={creating || deleting || indexing || editPending || importLoading}
+                className="rounded-lg border border-indigo-300 bg-white px-3 py-2 text-sm font-semibold text-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Import repository ZIP
+              </button>
             </div>
           </div>
           <p id="knowledge-source-file-help" className="mt-2 text-xs leading-5 text-slate-500">
             Select one UTF-8 .txt or .md file up to 100 KiB. Importing fills this form locally;
             Save uploads the note, and indexing remains a separate explicit action.
           </p>
+          <RepositoryZipImportPanel
+            active={zipImportOpen && active}
+            disabled={creating || deleting || indexing || editPending}
+            formValues={{ title, content }}
+            onImport={handleRepositoryZipImport}
+            onClose={() => setZipImportOpen(false)}
+          />
           <div className="mt-4 space-y-4">
             <div>
               <div className="flex items-center justify-between gap-3">

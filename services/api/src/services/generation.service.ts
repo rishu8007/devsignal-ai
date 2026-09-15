@@ -286,14 +286,29 @@ function buildKnowledgeQuery(signal: Awaited<ReturnType<typeof findSignalByOwner
   return codePoints.slice(0, MAX_KNOWLEDGE_QUERY_CODE_POINTS).join("");
 }
 
-// Greedily accumulates MongoDB-validated candidates, in the rank order returned by
-// retrieval, up to MAX_KNOWLEDGE_CANDIDATES and a total Unicode-code-point text budget.
-// Stops (rather than skipping) once the next candidate would exceed the budget, so the
-// context sent to the AI service always respects its own bounded-context contract.
+// Deduplicates exact text after line-ending normalization, preserving the first
+// ranked candidate and its citation metadata. Separate source records may still
+// legitimately expose the same text through the public search endpoint; this
+// selection-only deduplication applies only to context sent to generation.
+//
+// Bounds are applied after deduplication, in the rank order returned by retrieval.
+// Stops (rather than skipping) once the next candidate would exceed the budget, so
+// the context sent to the AI service always respects its bounded-context contract.
 function boundContext(candidates: PublicRetrievalCandidate[]): PublicRetrievalCandidate[] {
   const bounded: PublicRetrievalCandidate[] = [];
+  const seenTexts = new Set<string>();
   let totalCodePoints = 0;
-  for (const candidate of candidates.slice(0, MAX_KNOWLEDGE_CANDIDATES)) {
+  const uniqueCandidates: PublicRetrievalCandidate[] = [];
+  for (const candidate of candidates) {
+    const normalizedText = normalizeLineEndings(candidate.text);
+    if (seenTexts.has(normalizedText)) {
+      continue;
+    }
+    seenTexts.add(normalizedText);
+    uniqueCandidates.push(candidate);
+  }
+
+  for (const candidate of uniqueCandidates.slice(0, MAX_KNOWLEDGE_CANDIDATES)) {
     const candidateLength = Array.from(candidate.text).length;
     if (totalCodePoints + candidateLength > MAX_CONTEXT_TOTAL_CODE_POINTS) {
       break;
@@ -302,6 +317,10 @@ function boundContext(candidates: PublicRetrievalCandidate[]): PublicRetrievalCa
     totalCodePoints += candidateLength;
   }
   return bounded;
+}
+
+function normalizeLineEndings(value: string): string {
+  return value.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
 }
 
 function isDuplicateKeyError(error: unknown): boolean {

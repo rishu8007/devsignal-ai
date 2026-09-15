@@ -17,6 +17,9 @@ import type {
 } from "../src/types/generation.js";
 import type { PublicRetrievalCandidate } from "../src/services/knowledge-source-retrieval.service.js";
 
+// These tests measure deterministic context selection, exact-text deduplication,
+// citation mapping, and configured bounds. They do not measure semantic relevance,
+// factual correctness, or model quality.
 const ownerId = "507f1f77bcf86cd799439011";
 const signalId = "507f1f77bcf86cd799439013";
 const otherSourceId = "507f1f77bcf86cd799439099";
@@ -223,6 +226,145 @@ test("only MongoDB-validated candidates are bounded and sent as context, honorin
   assert.ok(receivedContext);
   assert.equal(receivedContext?.length, 1);
   assert.equal(receivedContext?.[0]?.chunkId, "chunk-big");
+});
+
+test("deduplicates identical normalized text before bounds and keeps the first citation metadata", async () => {
+  const first = candidate({
+    text: "duplicate\r\nnote",
+    chunkId: "first-source_v2_c0",
+    sourceId: "507f1f77bcf86cd799439012",
+    title: "First source",
+  });
+  const duplicate = candidate({
+    text: "duplicate\nnote",
+    chunkId: "second-source_v2_c0",
+    sourceId: otherSourceId,
+    title: "Second source",
+  });
+  const unique = candidate({
+    text: "unique relevant note",
+    chunkId: "third-source_v2_c0",
+    sourceId: "507f1f77bcf86cd799439010",
+    title: "Third source",
+  });
+  const { repository, retrieval, retrieveCalls, createCalls } = setup({
+    candidates: [first, duplicate, unique],
+  });
+  let providerCalls = 0;
+  let receivedContext: GenerationContextChunk[] | undefined;
+  const client: AiGenerationClient = {
+    generate: async (_source, context) => {
+      providerCalls += 1;
+      receivedContext = context;
+      return groundedResult([first.chunkId, unique.chunkId]);
+    },
+  };
+
+  await createGenerationForSignal(ownerId, signalId, true, client, repository, retrieval);
+
+  assert.equal(retrieveCalls.length, 1);
+  assert.equal(providerCalls, 1);
+  assert.deepEqual(
+    receivedContext?.map((chunk) => chunk.chunkId),
+    [first.chunkId, unique.chunkId],
+  );
+  assert.equal(createCalls[0]?.variations[0]?.citations[0]?.sourceId, first.sourceId);
+  assert.equal(createCalls[0]?.variations[0]?.citations[0]?.title, first.title);
+});
+
+test("similar but nonidentical text remains in ranked context", async () => {
+  const first = candidate({ chunkId: "similar-first", text: "same relevant note" });
+  const second = candidate({ chunkId: "similar-second", text: "same relevant note!" });
+  const { repository, retrieval } = setup({ candidates: [first, second] });
+  let receivedContext: GenerationContextChunk[] | undefined;
+  const client: AiGenerationClient = {
+    generate: async (_source, context) => {
+      receivedContext = context;
+      return groundedResult([first.chunkId, second.chunkId]);
+    },
+  };
+
+  await createGenerationForSignal(ownerId, signalId, true, client, repository, retrieval);
+
+  assert.deepEqual(
+    receivedContext?.map((chunk) => chunk.chunkId),
+    [first.chunkId, second.chunkId],
+  );
+});
+
+test("applies the five-chunk limit after exact-text deduplication", async () => {
+  const candidates = Array.from({ length: 6 }, (_, index) =>
+    candidate({
+      chunkId: `bounded-${index}`,
+      text: `relevant note ${index}`,
+    }),
+  );
+  const { repository, retrieval } = setup({ candidates });
+  let receivedContext: GenerationContextChunk[] | undefined;
+  const client: AiGenerationClient = {
+    generate: async (_source, context) => {
+      receivedContext = context;
+      return groundedResult([candidates[0]?.chunkId ?? "bounded-0"]);
+    },
+  };
+
+  await createGenerationForSignal(ownerId, signalId, true, client, repository, retrieval);
+
+  assert.equal(receivedContext?.length, 5);
+  assert.deepEqual(
+    receivedContext?.map((chunk) => chunk.chunkId),
+    candidates.slice(0, 5).map((candidateItem) => candidateItem.chunkId),
+  );
+});
+
+test("applies the total context limit using Unicode code points after deduplication", async () => {
+  const candidates = Array.from({ length: 4 }, (_, index) =>
+    candidate({
+      chunkId: `unicode-${index}`,
+      text: `${"🚀".repeat(998)}${String.fromCodePoint(0x1f600 + index)}`,
+    }),
+  );
+  const tail = candidate({ chunkId: "unicode-tail", text: "tail!" });
+  const { repository, retrieval } = setup({ candidates: [...candidates, tail] });
+  let receivedContext: GenerationContextChunk[] | undefined;
+  const client: AiGenerationClient = {
+    generate: async (_source, context) => {
+      receivedContext = context;
+      return groundedResult([candidates[0]?.chunkId ?? "unicode-0"]);
+    },
+  };
+
+  await createGenerationForSignal(ownerId, signalId, true, client, repository, retrieval);
+
+  assert.equal(receivedContext?.length, 4);
+  assert.equal(
+    receivedContext?.reduce((total, chunk) => total + Array.from(chunk.text).length, 0),
+    3996,
+  );
+  assert.equal(receivedContext?.some((chunk) => chunk.chunkId === tail.chunkId), false);
+});
+
+test("citations for a removed duplicate are rejected and retained context is the only mappable context", async () => {
+  const first = candidate({ chunkId: "retained-duplicate", text: "same\nnote" });
+  const duplicate = candidate({
+    chunkId: "removed-duplicate",
+    sourceId: otherSourceId,
+    text: "same\r\nnote",
+  });
+  const { repository, retrieval } = setup({ candidates: [first, duplicate] });
+  let providerCalls = 0;
+  const client: AiGenerationClient = {
+    generate: async () => {
+      providerCalls += 1;
+      return groundedResult([duplicate.chunkId]);
+    },
+  };
+
+  await assert.rejects(
+    createGenerationForSignal(ownerId, signalId, true, client, repository, retrieval),
+    { code: "AI_INVALID_RESPONSE" },
+  );
+  assert.equal(providerCalls, 1);
 });
 
 test("no usable knowledge context returns a specific safe error without calling generation", async () => {

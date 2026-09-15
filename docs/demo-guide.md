@@ -1,9 +1,8 @@
-# DevSignal AI MVP demo
+# DevSignal AI Personal RAG demo
 
-This walkthrough takes about 5–7 minutes once MongoDB, the API, the AI
-service, and the web app are running. It demonstrates the current
-human-reviewed workflow. Use a test account and never paste real credentials
-or secrets into the demo.
+This concise walkthrough demonstrates the implemented human-reviewed
+Personal RAG workflow. Use a test account and never paste real credentials or
+secrets into the demo.
 
 ## Before you start
 
@@ -14,88 +13,95 @@ works as expected.
 
 Live generation requires a valid OpenAI key and may incur usage costs. To
 demonstrate the UI without another provider request, use the existing-draft
-route in the next section.
+route below.
+
+Start one AI service from the repository root:
+
+```powershell
+& services\ai\.venv\Scripts\python.exe -m uvicorn app.main:app --app-dir services\ai --reload
+```
+
+Use only one AI service on port 8000. `--reload` watches the current code and
+restarts that Uvicorn process after local changes; it is not a reason to
+launch a second server. If port 8000 is already in use, reuse the healthy
+service or stop that specific process before starting another one.
 
 ## End-to-end path
 
-### 1. Save a Signal
+### 1. Save and index a Knowledge note
 
-On the **Create** tab, use this realistic sample:
+Open the **Knowledge** tab and enter a short note. For example:
 
-- **Topic or feature:** `Added request tracing to our API`
-- **Learning notes:** `I added request tracing to our Express API with a
+- **Title:** `Request tracing notes`
+- **Text notes:** `I added request tracing to our Express API with a
   correlation ID carried through middleware and database calls. The main
   lesson was to make the ID visible in every error response and log context
   without logging request payloads or credentials.`
-- **Content type:** `Technical insight`
-- **Primary audience:** `Developers & engineers`
 
-Choose **Save signal**. The Signal is stored under your account and becomes
-available in Recent Signals.
+Choose **Save knowledge source**. In the saved source list, choose **View
+details**, inspect its processing status, and choose **Index source** followed
+by **Confirm and index**. Wait until the status is **Indexed** before using
+the note for grounded generation. Indexing sends note text to the configured
+embedding provider and may incur usage costs.
 
-### 2. Generate drafts
+### 2. Create a Signal and opt into knowledge
 
-Choose **Generate three variations** on the Recent Signal card (or **Generate three drafts** in Draft Studio) for the saved Signal. The API sends the owned Signal
-content to the FastAPI service and stores three meaningfully different
-variations. Open the resulting Draft Studio view.
+On the **Create** tab, save a Signal with a topic and learning notes. Select
+the Signal, then select **Use my knowledge notes** in Draft Studio and choose
+**Generate three drafts**. This makes one new Generation using indexed notes as
+supporting context and may incur retrieval and provider costs.
 
-**Existing-draft route (no paid generation):** if your account already has a
-saved draft, select the **Drafts** tab instead, choose **Open in Draft
-Studio**, and continue at the review step. This route loads the persisted
-Signal and Generation by ID and does not call the generation endpoint. If the
-account has no draft yet, stop after saving the Signal or use a test provider
-environment before generating.
+If a Generation already exists, opening it loads the saved result. Generations
+are reused; selecting the knowledge option does not regenerate an existing
+Generation.
 
-### 3. Review and edit
+### 3. Inspect supporting sources
 
-In Draft Studio, inspect the three saved variations. Select one, read the
-human-review notice, and use **Edit** to change its content. Save the edit,
-then confirm the server response is reflected in the studio.
+Under a generated variation, select a supporting-source reference. The inline
+**Current source** panel fetches the latest source and shows its title,
+content version, and plain-text content. A version-mismatch notice means the
+current source changed after generation. This is not a historical snapshot:
+the citation identifies the version used during generation, while the panel
+shows the current source. References indicate provenance, not factual
+verification.
 
-Editing is intentionally a safety boundary: it resets that variation to
-**Draft** and clears any planned calendar date. It does not change sibling
-variations.
+If a source was deleted, the panel explains that it is no longer available;
+the saved draft and citation remain unchanged.
 
-### 4. Approve
+### 4. Review, edit, and approve
 
-After reviewing the content, choose **Approve** for the variation you want to
-keep. Approval is scoped to that saved variation. Approval alone does not
-schedule or publish anything.
+Read the human-review notice and use **Edit** when needed. Saving an edit
+replaces the studio state with the server response and clears that variation's
+supporting references, approval, and planned date. It does not change sibling
+variations. After review, choose **Approve** for the variation you want to
+keep.
 
-### 5. Browse the Drafts library
+### 5. Recover uncertain outcomes
 
-Open the **Drafts** tab. Try **All**, **Draft**, and **Approved** filters.
-The library is owner-scoped, paginated, and shows the saved topic, readable
-angle, status, content, and **Generation updated** timestamp. Use **Copy
-draft** to copy only the persisted content; paragraph breaks are preserved.
+If a generation or mutation request times out or reports an uncertain
+outcome, do not immediately repeat a paid operation. Use **Check for saved
+drafts**, or open the **Drafts** tab and choose **Open in Draft Studio** to
+look for the persisted result.
 
-### 6. Plan a calendar date
+### 6. Browse drafts and plan manually
 
-Return to Draft Studio for the approved variation. Enter a future local date
-and time in the separately labeled controls, then choose **Add to calendar**
-(or **Change planned date** for an existing plan). The UI sends the local
-selection as a UTC timestamp and shows the saved value in your local
-timezone.
+The **Drafts** tab is owner-scoped and paginated. Use **Copy draft** to copy
+only saved draft content. For an approved variation, enter a future local
+date and time and choose **Add to calendar**. Calendar dates are manual
+publishing plans; nothing publishes automatically.
 
-This is a manual publishing plan only. Nothing publishes automatically, and
-past planned dates remain in the Scheduled metric until removed. Use
-**Remove from calendar** to clear the plan.
-
-### 7. Open Calendar and copy
-
-Open the **Calendar** tab. Use **Today**, **Previous month**, or **Next month**
-to inspect the month agenda. Open the item in Draft Studio or choose **Copy
-draft** directly from the calendar card. Calendar items are approved,
-owner-scoped, and displayed in planned local date/time order.
+Use the **Calendar** tab to inspect planned items and **Remove from calendar**
+to clear a plan. Approval and scheduling preserve any remaining references.
 
 ## What is happening under the hood
 
 The Next.js app talks to the Express API through the shared browser client.
-The API authenticates the HTTP-only cookie, verifies Signal ownership, stores
-Signals and embedded Generation variations in MongoDB, and calls FastAPI only
-for a new generation. FastAPI validates structured provider output before the
-API persists it. Draft library and calendar queries return public,
-owner-filtered projections; the browser never connects directly to MongoDB.
+The API authenticates the HTTP-only cookie, verifies ownership, stores notes,
+Signals, Generations, and citations in MongoDB, and calls FastAPI for
+explicit indexing, retrieval, and new generation work. FastAPI validates
+structured provider output before the API persists it. Draft, source, and
+calendar queries return public owner-filtered projections; the browser never
+connects directly to MongoDB.
 
 ## Screenshot checklist
 
@@ -115,10 +121,14 @@ email addresses, tokens, API keys, database URLs, or private draft content.
 
 - Calendar dates are reminders for manual publishing; there is no automatic
   publishing, scheduler, notification, or completed state.
-- Editing clears approval and the planned date together.
+- File uploads, GitHub ingestion, autonomous agents, and publishing
+  automation are future work and are not demonstrated here.
+- Editing clears source references, approval, and the planned date together
+  for the edited variation.
 - Scheduled counts include approved variations with past planned dates until
   they are removed.
-- Generated claims can still require factual correction, so human review is
-  required before use.
+- References indicate provenance, not factual verification. Current-source
+  inspection is not a historical snapshot.
+- Indexing, retrieval, and generation may incur provider costs.
 - The local generation duplicate guard is process-local; it is not distributed
   coordination for multiple API instances.

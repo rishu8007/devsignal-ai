@@ -9,6 +9,10 @@ content. The current product includes:
 - an owner-scoped draft library;
 - plain-text copying;
 - a manual content calendar with planned dates.
+- Personal Knowledge notes that can be explicitly indexed and used as
+  opt-in supporting context for new draft Generations;
+- per-variation supporting references with read-only inspection of the
+  current source.
 
 Nothing publishes automatically. Automatic publishing and notifications are
 future plans, not implemented features.
@@ -126,6 +130,13 @@ npm run dev:api
 npm run dev:web
 ```
 
+Run exactly one AI service on port 8000. The `--reload` option watches the
+current `services\ai` code and restarts Uvicorn after local code changes; it
+does not require or justify starting a second server. If port 8000 is already
+occupied, reuse the healthy service or stop that specific local process before
+starting another one. Do not run duplicate AI servers against the same API
+configuration.
+
 Use the same host style for browser and API configuration:
 `apps/web/.env.local` uses `http://localhost:4000/api/v1`, while the API
 example uses `WEB_ORIGIN=http://localhost:3000`. This keeps browser cookie
@@ -150,9 +161,10 @@ Create files only from the tracked examples. The required values are:
 
 `services/api/.env` and `services/ai/.env` must use the same internal key:
 the API sends `AI_INTERNAL_API_KEY` and FastAPI verifies `INTERNAL_API_KEY`.
-The examples use `gpt-5.6-luna` as the AI model default. Live generation
-requires a valid OpenAI key and can incur provider usage costs. Tests use a
-fake provider and do not call OpenAI.
+The examples use `gpt-5.6-luna` as the AI model default. Live indexing,
+retrieval, and generation can incur embedding or provider usage costs.
+Live generation requires a valid OpenAI key. Tests use a fake provider and do
+not call OpenAI.
 
 ## Verification
 
@@ -195,11 +207,27 @@ workflow result is distinct from these local checks.
 
 - Calendar dates are manual publishing plans; nothing publishes automatically.
 - Editing scheduled approved content clears both approval and its planned date.
+- Editing a grounded variation also clears that variation's supporting
+  references. Existing saved Generations are reused; choosing knowledge again
+  does not regenerate them.
+- A supporting reference records provenance for the content used during
+  generation, not factual verification. The Draft Studio's **Current source**
+  panel fetches the latest source and is not a historical snapshot; it can
+  show that the source version has changed.
+- Indexing, retrieval, and generation may each incur provider costs. If a
+  generation request times out or the outcome is otherwise uncertain, use
+  **Check for saved drafts** or open the Drafts library before trying again.
 - The Scheduled metric counts approved variations with a planned date,
   including past planned dates, until they are removed.
 - Generated claims may be unsupported and must be checked by a human before use.
 - The API's in-memory generation guard coordinates one API process only;
   distributed coordination is a future deployment concern.
+
+The implemented Personal RAG workflow is deliberately narrow: text notes,
+explicit indexing, owner-scoped retrieval, opt-in context for new
+Generations, and supporting-source inspection are available. File uploads,
+GitHub ingestion, autonomous agents, automatic publishing, and publishing
+automation are future work, not part of this demo.
 
 See [services/api/README.md](services/api/README.md) and
 [services/ai/README.md](services/ai/README.md) for service-specific details,

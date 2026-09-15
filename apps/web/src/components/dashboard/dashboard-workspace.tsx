@@ -618,7 +618,9 @@ export function DashboardWorkspace() {
          selectionDisabled={generationPending || mutationPending || editingVariationId !== null}
           />
           <DraftStudio
+        key={`${authStatus}:${selectedSignal?.id ?? ""}`}
         signalTopic={selectedSignal?.topic ?? null}
+        onAuthenticationExpired={invalidateSession}
         generation={generation}
         useKnowledge={useKnowledge}
         onUseKnowledgeChange={setUseKnowledge}

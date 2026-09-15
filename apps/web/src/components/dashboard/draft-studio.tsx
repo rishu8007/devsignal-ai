@@ -1,14 +1,21 @@
 import { Sparkles } from "lucide-react";
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { ApiClientError } from "@/lib/api/api-client";
+import {
+  getKnowledgeSource,
+  type PublicKnowledgeSource,
+} from "@/lib/api/knowledge-source-client";
 import type {
   GenerationAngle,
   PublicGeneration,
   PublicDraft,
+  PublicSourceCitation,
 } from "@/lib/api/generation-client";
 import { CopyDraftButton } from "@/components/dashboard/copy-draft-button";
 
 interface DraftStudioProps {
   signalTopic: string | null;
+  onAuthenticationExpired: () => void;
   generation: PublicGeneration | null;
   useKnowledge: boolean;
   onUseKnowledgeChange: (value: boolean) => void;
@@ -42,6 +49,7 @@ const MAX_CONTENT_LENGTH = 3000;
 
 export function DraftStudio({
   signalTopic,
+  onAuthenticationExpired,
   generation,
   useKnowledge,
   onUseKnowledgeChange,
@@ -64,6 +72,17 @@ export function DraftStudio({
   onRetry,
 }: DraftStudioProps) {
   const [scheduleInputs, setScheduleInputs] = useState<Record<string, { date: string; time: string }>>({});
+  const [selectedSource, setSelectedSource] = useState<{
+    citation: PublicSourceCitation;
+    buttonKey: string;
+    variationId: string;
+  } | null>(null);
+  const [currentSource, setCurrentSource] = useState<PublicKnowledgeSource | null>(null);
+  const [sourceLoading, setSourceLoading] = useState(false);
+  const [sourceError, setSourceError] = useState<string | null>(null);
+  const sourceRequestId = useRef(0);
+  const sourceController = useRef<AbortController | null>(null);
+  const sourceButtons = useRef<Record<string, HTMLButtonElement | null>>({});
   const trimmedLength = editorContent.trim().length;
   const editingVariation = generation?.variations.find(
     (variation) => variation.id === editingVariationId,
@@ -72,6 +91,72 @@ export function DraftStudio({
     trimmedLength >= MIN_CONTENT_LENGTH && trimmedLength <= MAX_CONTENT_LENGTH;
   const contentUnchanged =
     editingVariation !== undefined && editorContent === editingVariation.content;
+
+  useEffect(() => {
+    return () => {
+      sourceRequestId.current += 1;
+      sourceController.current?.abort();
+    };
+  }, []);
+
+  const inspectSource = useCallback(
+    async (citation: PublicSourceCitation, buttonKey: string, variationId: string) => {
+      const currentRequest = ++sourceRequestId.current;
+      sourceController.current?.abort();
+      const controller = new AbortController();
+      sourceController.current = controller;
+      setSelectedSource({ citation, buttonKey, variationId });
+      setCurrentSource(null);
+      setSourceError(null);
+      setSourceLoading(true);
+
+      try {
+        const source = await getKnowledgeSource(citation.sourceId, controller.signal);
+        if (currentRequest !== sourceRequestId.current) return;
+        setCurrentSource(source);
+      } catch (error: unknown) {
+        if (error instanceof ApiClientError && error.code === "REQUEST_ABORTED") return;
+        if (currentRequest !== sourceRequestId.current) return;
+        if (error instanceof ApiClientError && error.code === "AUTHENTICATION_REQUIRED") {
+          onAuthenticationExpired();
+          return;
+        }
+        if (error instanceof ApiClientError && error.code === "SOURCE_NOT_FOUND") {
+          setSourceError("This source is no longer available.");
+        } else {
+          setSourceError("Unable to load the current source. Please try again.");
+        }
+      } finally {
+        if (currentRequest === sourceRequestId.current) {
+          setSourceLoading(false);
+          if (sourceController.current === controller) sourceController.current = null;
+        }
+      }
+    },
+    [onAuthenticationExpired],
+  );
+
+  const closeSource = useCallback(() => {
+    const buttonKey = selectedSource?.buttonKey;
+    sourceRequestId.current += 1;
+    sourceController.current?.abort();
+    setSelectedSource(null);
+    setCurrentSource(null);
+    setSourceLoading(false);
+    setSourceError(null);
+    if (buttonKey) {
+      window.requestAnimationFrame(() => sourceButtons.current[buttonKey]?.focus());
+    }
+  }, [selectedSource?.buttonKey]);
+
+  const retrySource = useCallback(() => {
+    if (!selectedSource) return;
+    void inspectSource(
+      selectedSource.citation,
+      selectedSource.buttonKey,
+      selectedSource.variationId,
+    );
+  }, [inspectSource, selectedSource]);
 
   return (
     <section
@@ -238,12 +323,88 @@ export function DraftStudio({
                           These references provide supporting context, not verified facts.
                         </p>
                         <ul className="mt-2 space-y-1 text-sm text-slate-700">
-                          {variation.sourceCitations.map((citation) => (
+                          {variation.sourceCitations.map((citation) => {
+                            const buttonKey = `${variation.id}:${citation.chunkId}`;
+                            const isSelected = selectedSource?.buttonKey === buttonKey;
+                            return (
                             <li key={citation.chunkId}>
-                              {citation.title} (version {citation.contentVersion})
+                              <button
+                                ref={(element) => {
+                                  sourceButtons.current[buttonKey] = element;
+                                }}
+                                type="button"
+                                aria-expanded={isSelected}
+                                aria-controls={isSelected ? "current-source-panel" : undefined}
+                                onClick={() =>
+                                  void inspectSource(citation, buttonKey, variation.id)
+                                }
+                                className="text-left font-medium text-indigo-700 underline decoration-indigo-300 underline-offset-2 hover:text-indigo-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                              >
+                                View current source: {citation.title} (version {citation.contentVersion})
+                              </button>
                             </li>
-                          ))}
+                            );
+                          })}
                         </ul>
+                        {selectedSource?.variationId === variation.id && (
+                          <div
+                            id="current-source-panel"
+                            className="mt-3 rounded-lg border border-indigo-100 bg-white p-3"
+                            aria-live="polite"
+                          >
+                            <div className="flex flex-wrap items-start justify-between gap-3">
+                              <div>
+                                <h4 className="font-semibold text-slate-900">Current source</h4>
+                                {currentSource && (
+                                  <p className="mt-1 text-sm text-slate-700">
+                                    {currentSource.title} (version {currentSource.contentVersion})
+                                  </p>
+                                )}
+                              </div>
+                              <button
+                                type="button"
+                                onClick={closeSource}
+                                className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-semibold text-slate-700"
+                              >
+                                Close
+                              </button>
+                            </div>
+                            {sourceLoading && (
+                              <p className="mt-3 text-sm text-slate-500" role="status">
+                                Loading current source...
+                              </p>
+                            )}
+                            {sourceError && (
+                              <div className="mt-3" role="alert">
+                                <p className="text-sm text-red-700">{sourceError}</p>
+                                {sourceError !== "This source is no longer available." && (
+                                  <button
+                                    type="button"
+                                    onClick={retrySource}
+                                    className="mt-2 rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white"
+                                  >
+                                    Retry
+                                  </button>
+                                )}
+                              </div>
+                            )}
+                            {currentSource && !sourceLoading && !sourceError && (
+                              <>
+                                {currentSource.contentVersion !==
+                                  selectedSource.citation.contentVersion && (
+                                  <p className="mt-3 text-sm font-medium text-amber-800" role="status">
+                                    This source has changed since generation. The citation refers to
+                                    version {selectedSource.citation.contentVersion}; this is the
+                                    current version {currentSource.contentVersion}.
+                                  </p>
+                                )}
+                                <p className="mt-3 whitespace-pre-wrap break-words text-sm leading-7 text-slate-700">
+                                  {currentSource.content}
+                                </p>
+                              </>
+                            )}
+                          </div>
+                        )}
                       </div>
                     )}
                     <div className="mt-4 flex flex-wrap gap-3">

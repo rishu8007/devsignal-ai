@@ -188,16 +188,19 @@ export function createKnowledgeSource(payload: {
 export function listKnowledgeSources({
   page,
   limit,
+  processingStatus,
   signal,
 }: {
   page: number;
   limit: number;
+  processingStatus?: KnowledgeSourceProcessingStatus;
   signal?: AbortSignal;
 }): Promise<KnowledgeSourceListResponse> {
   const query = new URLSearchParams({
     page: String(page),
     limit: String(limit),
   });
+  if (processingStatus) query.set("processingStatus", processingStatus);
 
   return request(
     `/sources?${query.toString()}`,

@@ -104,6 +104,14 @@ test("knowledge source query and parameter validation are strict", () => {
     { page: 1, limit: 20 },
   );
   assert.equal(
+    listKnowledgeSourcesQuerySchema.safeParse({ processingStatus: "unknown" }).success,
+    false,
+  );
+  assert.deepEqual(
+    listKnowledgeSourcesQuerySchema.parse({ processingStatus: "indexed" }),
+    { page: 1, limit: 20, processingStatus: "indexed" },
+  );
+  assert.equal(
     listKnowledgeSourcesQuerySchema.safeParse({ page: "0" }).success,
     false,
   );
@@ -183,13 +191,13 @@ test("knowledge source listing is owner-scoped and uses empty totalPages", async
 
   const result = await listKnowledgeSourcesForUser(
     ownerId,
-    { page: 2, limit: 1 },
+    { page: 2, limit: 1, processingStatus: "indexed" },
     repository,
   );
   assert.deepEqual(result.pagination, { page: 2, limit: 1, total: 0, totalPages: 0 });
   assert.deepEqual(calls, [
-    ["list", ownerId, { page: 2, limit: 1 }],
-    ["count", ownerId],
+    ["list", ownerId, { page: 2, limit: 1, processingStatus: "indexed" }],
+    ["count", ownerId, { page: 2, limit: 1, processingStatus: "indexed" }],
   ]);
 });
 

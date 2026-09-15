@@ -26,7 +26,11 @@ export function findKnowledgeSourcesByOwner(
   query: ListKnowledgeSourcesQuery,
 ): Promise<KnowledgeSourceDocument[]> {
   const skip = (query.page - 1) * query.limit;
-  return KnowledgeSourceModel.find({ ownerId })
+  const filter = {
+    ownerId,
+    ...(query.processingStatus ? { processingStatus: query.processingStatus } : {}),
+  };
+  return KnowledgeSourceModel.find(filter)
     .select("_id title content contentVersion processingStatus createdAt updatedAt")
     .sort({ createdAt: -1, _id: -1 })
     .skip(skip)
@@ -35,8 +39,14 @@ export function findKnowledgeSourcesByOwner(
     .exec();
 }
 
-export function countKnowledgeSourcesByOwner(ownerId: string): Promise<number> {
-  return KnowledgeSourceModel.countDocuments({ ownerId }).exec();
+export function countKnowledgeSourcesByOwner(
+  ownerId: string,
+  query: ListKnowledgeSourcesQuery,
+): Promise<number> {
+  return KnowledgeSourceModel.countDocuments({
+    ownerId,
+    ...(query.processingStatus ? { processingStatus: query.processingStatus } : {}),
+  }).exec();
 }
 
 export function findKnowledgeSourceByIdAndOwner(

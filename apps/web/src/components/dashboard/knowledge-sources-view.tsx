@@ -13,6 +13,7 @@ import {
   searchKnowledgeSources,
   updateKnowledgeSource,
   type KnowledgeSearchResponse,
+  type KnowledgeSourceProcessingStatus,
   type KnowledgeSourceListResponse,
   type PublicKnowledgeSource,
 } from "@/lib/api/knowledge-source-client";
@@ -47,6 +48,7 @@ export function KnowledgeSourcesView({
   const [creating, setCreating] = useState(false);
   const [sourceList, setSourceList] = useState<KnowledgeSourceListResponse | null>(null);
   const [page, setPage] = useState(1);
+  const [statusFilter, setStatusFilter] = useState<KnowledgeSourceProcessingStatus | "all">("all");
   const [listLoading, setListLoading] = useState(false);
   const [listError, setListError] = useState<string | null>(null);
   const [selectedSourceId, setSelectedSourceId] = useState<string | null>(null);
@@ -164,6 +166,7 @@ export function KnowledgeSourcesView({
     viewDetailsButtonRef.current = null;
     setSourceList(null);
     setPage(1);
+    setStatusFilter("all");
     setListError(null);
     setSelectedSourceId(null);
     setSelectedSource(null);
@@ -239,7 +242,7 @@ export function KnowledgeSourcesView({
   }, [active, authenticated]);
 
   const loadSources = useCallback(async (requestedPage: number, force = false) => {
-    const queryKey = String(requestedPage);
+    const queryKey = `${requestedPage}:${statusFilter}`;
     if (!force && listQueryKey.current === queryKey && listDataRef.current !== null) return;
     listQueryKey.current = queryKey;
     const requestNumber = ++listRequestId.current;
@@ -252,6 +255,7 @@ export function KnowledgeSourcesView({
       const result = await listKnowledgeSources({
         page: requestedPage,
         limit: 20,
+        processingStatus: statusFilter === "all" ? undefined : statusFilter,
         signal: controller.signal,
       });
       if (!mounted.current || requestNumber !== listRequestId.current) return;
@@ -275,7 +279,7 @@ export function KnowledgeSourcesView({
         if (listController.current === controller) listController.current = null;
       }
     }
-  }, [onAuthenticationExpired]);
+  }, [onAuthenticationExpired, statusFilter]);
 
   useEffect(() => {
     if (!active || !authenticated) return;
@@ -288,6 +292,15 @@ export function KnowledgeSourcesView({
     listDataRef.current = null;
     void loadSources(page, true);
   }, [loadSources, page]);
+
+  const handleStatusFilterChange = useCallback((next: KnowledgeSourceProcessingStatus | "all") => {
+    listController.current?.abort();
+    listRequestId.current += 1;
+    listQueryKey.current = "";
+    listDataRef.current = null;
+    setStatusFilter(next);
+    setPage(1);
+  }, []);
 
   const replaceSourceState = useCallback((updated: PublicKnowledgeSource) => {
     setSelectedSource(updated);
@@ -588,6 +601,12 @@ export function KnowledgeSourcesView({
       setIndexingConfirm(false);
       setIndexingError(null);
       resetEditState();
+      listQueryKey.current = "";
+      listDataRef.current = null;
+      void loadSources(page, true);
+      listQueryKey.current = "";
+      listDataRef.current = null;
+      void loadSources(page, true);
     } catch (error: unknown) {
       if (error instanceof ApiClientError && error.code === "REQUEST_ABORTED") return;
       if (!mounted.current || requestNumber !== editRequestId.current) return;
@@ -631,6 +650,8 @@ export function KnowledgeSourcesView({
     replaceSourceState,
     resetEditState,
     selectedSource,
+    loadSources,
+    page,
   ]);
 
   const handleCheckEditStatus = useCallback(async (reloadEdits: boolean) => {
@@ -735,16 +756,9 @@ export function KnowledgeSourcesView({
       const updated = await indexKnowledgeSource(sourceToIndex.id, indexingTimeoutMs);
       if (!mounted.current) return;
       setSelectedSource(updated);
-      if (sourceList && sourceList.sources) {
-        const updatedList = {
-          ...sourceList,
-          sources: sourceList.sources.map((s) =>
-            s.id === updated.id ? updated : s,
-          ),
-        };
-        setSourceList(updatedList);
-        listDataRef.current = updatedList;
-      }
+      listQueryKey.current = "";
+      listDataRef.current = null;
+      void loadSources(page, true);
 
     } catch (error: unknown) {
       if (!mounted.current) return;
@@ -1144,6 +1158,35 @@ export function KnowledgeSourcesView({
             </div>
           )}
         </section>
+
+        <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h3 className="text-lg font-semibold text-slate-900">Saved knowledge sources</h3>
+            <p className="mt-1 text-sm text-slate-600">Filter sources by processing status.</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <label htmlFor="knowledge-source-status-filter" className="text-sm font-medium text-slate-700">
+              Status
+            </label>
+            <select
+              id="knowledge-source-status-filter"
+              value={statusFilter}
+              onChange={(event) =>
+                handleStatusFilterChange(
+                  event.target.value as KnowledgeSourceProcessingStatus | "all",
+                )
+              }
+              disabled={listLoading || creating || deleting || indexing || editPending}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <option value="all">All</option>
+              <option value="pending">Pending</option>
+              <option value="indexing">Indexing</option>
+              <option value="indexed">Indexed</option>
+              <option value="failed">Failed</option>
+            </select>
+          </div>
+        </div>
 
         {listLoading && (
           <p className="mt-6 rounded-xl border border-slate-200 bg-white p-5 text-sm text-slate-500" role="status">

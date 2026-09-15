@@ -10,6 +10,7 @@ const contentSchema = z
   .trim()
   .min(10, "Content must contain at least 10 characters")
   .max(20_000, "Content must contain at most 20000 characters");
+const processingStatusSchema = z.enum(["pending", "indexing", "indexed", "failed"]);
 
 export const createKnowledgeSourceSchema = z
   .object({
@@ -35,6 +36,7 @@ export const listKnowledgeSourcesQuerySchema = z
       .min(1, "Limit must be at least 1")
       .max(50, "Limit must be at most 50")
       .default(20),
+    processingStatus: processingStatusSchema.optional(),
   })
   .strict();
 

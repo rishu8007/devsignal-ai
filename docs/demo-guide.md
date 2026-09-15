@@ -44,6 +44,10 @@ by **Confirm and index**. Wait until the status is **Indexed** before using
 the note for grounded generation. Indexing sends note text to the configured
 embedding provider and may incur usage costs.
 
+Use the status filter above the saved source library to view **All**,
+**Pending**, **Indexing**, **Indexed**, or **Failed** sources. Filtering only
+changes the list view; it does not index, search, or modify notes.
+
 ### 2. Create a Signal and opt into knowledge
 
 On the **Create** tab, save a Signal with a topic and learning notes. Select

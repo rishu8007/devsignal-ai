@@ -107,7 +107,7 @@ export async function listKnowledgeSourcesForUser(
   assertValidOwnerId(ownerId);
   const [sources, total] = await Promise.all([
     repository.findKnowledgeSourcesByOwner(ownerId, query),
-    repository.countKnowledgeSourcesByOwner(ownerId),
+    repository.countKnowledgeSourcesByOwner(ownerId, query),
   ]);
 
   return {

@@ -14,6 +14,8 @@ interface QueryStub {
 
 interface ModelStub {
   findOneAndUpdate(...args: unknown[]): QueryStub;
+  find(...args: unknown[]): QueryStub;
+  countDocuments(...args: unknown[]): QueryStub;
 }
 
 test("source edit repository enables Mongoose update pipelines and literalizes user text", async () => {
@@ -49,6 +51,44 @@ test("source edit repository enables Mongoose update pipelines and literalizes u
       new: true,
       timestamps: false,
       updatePipeline: true,
+    });
+
+    test("source list repository applies owner and status filters to list and count", async () => {
+      const model = KnowledgeSourceModel as unknown as ModelStub;
+      const originalFind = model.find;
+      const originalCount = model.countDocuments;
+      const captured: unknown[][] = [];
+      const query: QueryStub = {
+        select: () => query,
+        sort: () => query,
+        skip: () => query,
+        limit: () => query,
+        lean: () => query,
+        exec: async () => [],
+      } as QueryStub;
+      model.find = (...args: unknown[]) => {
+        captured.push(["find", ...args]);
+        return query;
+      };
+      model.countDocuments = (...args: unknown[]) => {
+        captured.push(["count", ...args]);
+        return query;
+      };
+
+      try {
+        const { findKnowledgeSourcesByOwner, countKnowledgeSourcesByOwner } =
+          await import("../src/repositories/knowledge-source.repository.js");
+        const listQuery = { page: 2, limit: 10, processingStatus: "failed" as const };
+        await findKnowledgeSourcesByOwner(ownerId, listQuery);
+        await countKnowledgeSourcesByOwner(ownerId, listQuery);
+        assert.deepEqual(captured, [
+          ["find", { ownerId, processingStatus: "failed" }],
+          ["count", { ownerId, processingStatus: "failed" }],
+        ]);
+      } finally {
+        model.find = originalFind;
+        model.countDocuments = originalCount;
+      }
     });
     const pipeline = captured[1] as Array<{ $set: Record<string, unknown> }>;
     assert.deepEqual(pipeline[0]?.$set.title, { $literal: "$title should stay text" });

@@ -143,6 +143,73 @@ example uses `WEB_ORIGIN=http://localhost:3000`. This keeps browser cookie
 sessions same-site and predictable. If you use `127.0.0.1`, use it
 consistently for both sides instead.
 
+## Optional Docker application stack
+
+The default Compose file still starts only the existing MongoDB and Qdrant
+infrastructure. The web, API, and AI containers are opt-in through the
+`app` profile and reuse the existing named volumes; they do not reset or
+migrate existing data.
+
+Create a private full-stack environment file from the placeholder example,
+then validate and start the application profile from the repository root:
+
+```powershell
+Copy-Item .env.docker.example .env.docker
+# Edit .env.docker and replace every placeholder, including both service keys.
+docker compose -f docker-compose.yml -f docker-compose.app.yml --env-file .env.docker --profile app config --quiet
+docker compose -f docker-compose.yml -f docker-compose.app.yml --env-file .env.docker --profile app build
+docker compose -f docker-compose.yml -f docker-compose.app.yml --env-file .env.docker --profile app up -d
+docker compose -f docker-compose.yml -f docker-compose.app.yml --env-file .env.docker --profile app ps
+```
+
+The browser uses `NEXT_PUBLIC_API_BASE_URL` baked into the web image at build
+time and must use a browser-reachable URL such as
+`http://localhost:4000/api/v1`; container DNS names such as `http://api:4000`
+must not be used there. API-to-MongoDB, API-to-AI, and AI-to-Qdrant use
+Compose service names internally. If a directly running service already owns
+ports 3000, 4000, or 8000, choose unused `WEB_PORT`, `API_PORT`, or `AI_PORT`
+values and update `NEXT_PUBLIC_API_BASE_URL`/`WEB_ORIGIN` consistently, or
+stop that specific process deliberately. Do not kill arbitrary processes.
+
+Check the bounded HTTP health endpoints without invoking providers:
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:4000/api/v1/health
+Invoke-RestMethod http://127.0.0.1:8000/api/v1/health
+Invoke-WebRequest http://127.0.0.1:3000/ -UseBasicParsing
+```
+
+After source changes, rebuild the affected image. Rebuild the web image after
+code or any `NEXT_PUBLIC_*` value changes; recreate API or AI containers after
+server-side environment changes:
+
+```powershell
+docker compose -f docker-compose.yml -f docker-compose.app.yml --env-file .env.docker --profile app up -d --build web
+docker compose -f docker-compose.yml -f docker-compose.app.yml --env-file .env.docker --profile app up -d --force-recreate api ai
+```
+
+For recovery, inspect status and bounded logs, then restart only the affected
+service after correcting its configuration:
+
+```powershell
+docker compose -f docker-compose.yml -f docker-compose.app.yml --env-file .env.docker --profile app ps
+docker compose -f docker-compose.yml -f docker-compose.app.yml --env-file .env.docker --profile app logs --tail 100 web api ai
+docker compose -f docker-compose.yml -f docker-compose.app.yml --env-file .env.docker --profile app up -d --no-deps api
+docker compose -f docker-compose.yml -f docker-compose.app.yml --env-file .env.docker --profile app stop
+```
+
+`docker compose -f docker-compose.yml -f docker-compose.app.yml --env-file .env.docker --profile app stop` preserves containers and volumes; do not use
+`docker compose down -v`, volume prune, or database migrations in the normal
+workflow. A healthy HTTP endpoint confirms process readiness only; it does
+not prove OpenAI credentials, Qdrant collections, indexing, retrieval, or
+generation work.
+
+Optional manual login and Knowledge/search/generation smoke checks can be
+performed at `http://localhost:3000` after health checks. Saving/indexing
+notes, retrieval, and generation may call paid providers. This local Compose
+setup is not a hosted production deployment; hosted HTTPS requires reviewing
+the browser/API origin and secure-cookie configuration separately.
+
 ## Environment configuration
 
 Create files only from the tracked examples. The required values are:

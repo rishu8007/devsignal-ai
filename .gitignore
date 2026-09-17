@@ -44,3 +44,9 @@ docker-data/
 # Temporary files
 tmp/
 temp/
+
+# Playwright browser-test output
+/playwright-report/
+/test-results/
+/apps/web/playwright-report/
+/apps/web/test-results/

@@ -42,6 +42,45 @@ jobs:
       - name: Build web
         run: npm run build --workspace=apps/web
 
+  web-browser:
+    name: Web browser checks
+    runs-on: ubuntu-latest
+    env:
+      NEXT_PUBLIC_API_BASE_URL: http://127.0.0.1:3100/api/v1
+      WEB_TEST_PORT: 3100
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Build web for browser checks
+        run: npm run build --workspace=apps/web
+
+      - name: Run mocked browser checks
+        run: npm run test:browser --workspace=apps/web
+
+      - name: Upload browser failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-browser-failure-artifacts
+          path: |
+            apps/web/playwright-report
+            apps/web/test-results
+          retention-days: 7
+
   api:
     name: API checks
     runs-on: ubuntu-latest

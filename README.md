@@ -272,6 +272,32 @@ workflow result is distinct from these local checks.
 
 ## Current limitations
 
+### Browser regression checks
+
+The web browser suite runs the production Next.js server on port `3100` and
+mocks the API at the browser boundary. It does not start API, AI, MongoDB, or
+Qdrant, and it makes no provider calls or database writes. Existing Docker
+services may remain running.
+
+From `D:\devsignal-ai`, install Chromium once and run:
+
+```powershell
+npx playwright install chromium
+$env:NEXT_PUBLIC_API_BASE_URL = "http://127.0.0.1:3100/api/v1"
+npm run build --workspace=apps/web
+npm run test:browser --workspace=apps/web
+```
+
+The browser command prepares the generated standalone server's local
+`public` and `.next/static` assets, then starts and stops that production
+server itself. Tests use
+synthetic authenticated data and cover frontend session handling, Knowledge
+search request behavior, and real packaged PDF/ZIP browser extraction. They
+do not test real cookie security, backend authentication, database validation,
+indexing, generation, or provider behavior. On failure, inspect
+`apps\web\playwright-report` and `apps\web\test-results` for the HTML report,
+screenshots, and traces.
+
 - Calendar dates are manual publishing plans; nothing publishes automatically.
 - Editing scheduled approved content clears both approval and its planned date.
 - Editing a grounded variation also clears that variation's supporting

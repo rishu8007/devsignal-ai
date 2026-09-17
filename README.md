@@ -210,6 +210,97 @@ notes, retrieval, and generation may call paid providers. This local Compose
 setup is not a hosted production deployment; hosted HTTPS requires reviewing
 the browser/API origin and secure-cookie configuration separately.
 
+## Prepared single-server HTTPS deployment
+
+The reviewable hosted deployment is a separate
+[docker-compose.deploy.yml](D:/devsignal-ai/docker-compose.deploy.yml). It
+uses Caddy as the only published service (`80` and `443`), routes
+`/api/v1` and `/api/v1/*` to the API without rewriting the prefix, and routes
+all other paths to Next.js. Web, API, AI, MongoDB, and Qdrant have no
+published host ports. Caddy certificate state and all application data use
+deployment-specific named volumes; this does not reuse or migrate the local
+Compose volumes.
+
+Before a future deployment, provide DNS for the chosen domain to the server
+and allow inbound TCP `80` and `443`. Copy the placeholder file and replace
+all values:
+
+```powershell
+Copy-Item .env.deploy.example .env.deploy
+# Edit .env.deploy privately; do not print or commit it.
+docker compose -p devsignal-https -f docker-compose.deploy.yml --env-file .env.deploy config --quiet
+docker compose -p devsignal-https -f docker-compose.deploy.yml --env-file .env.deploy build
+docker compose -p devsignal-https -f docker-compose.deploy.yml --env-file .env.deploy up -d
+docker compose -p devsignal-https -f docker-compose.deploy.yml --env-file .env.deploy ps
+```
+
+The public origin and `PUBLIC_DOMAIN` must match. The browser API base is
+`/api/v1`, so it is same-origin and is embedded in the web image at build
+time. Changing it or other `NEXT_PUBLIC_*` values requires rebuilding the web
+image. Server-only values require recreating the affected service. Production
+cookies are HttpOnly, Secure, and SameSite=Lax; the local HTTP Compose
+workflow remains separate and uses its existing non-production settings.
+
+`TRUST_PROXY_HOPS=1` is deployment-only: Express trusts exactly one network
+hop, the Caddy container, because the API has no published host port and the
+Compose file exposes no shorter public API path. Direct development defaults
+to `0`, so forwarded headers are not trusted. Caddy's default reverse-proxy
+behavior ignores untrusted incoming `X-Forwarded-*` values and constructs
+those headers from the connected client; do not add another ingress or enable
+additional Caddy trusted-proxy ranges without revisiting this assumption.
+Login and registration rate limits use the resolved client IP; generation
+limiting remains per authenticated user.
+
+Cookie-authenticated state-changing requests also require an `Origin` matching
+`PUBLIC_ORIGIN`. CORS controls browser response access but does not stop a
+cross-origin state-changing request, so this explicit origin check is the
+deployment's CSRF defense. Requests without the authentication cookie (such
+as login) are not subject to this cookie-write check.
+
+Validate Caddy configuration in an isolated container before deployment; this
+does not bind ports or request certificates:
+
+```powershell
+docker run --rm -e PUBLIC_DOMAIN=example.test `
+  -v "${PWD}\deploy\Caddyfile:/etc/caddy/Caddyfile:ro" `
+  caddy:2.10.2 caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+```
+
+Check the public site at `https://your-domain.example` and complete a normal
+login. Health endpoints are internal deployment checks; a healthy HTTP
+process does not prove provider credentials, indexing, retrieval, or
+generation. Saving/indexing/searching and generation may incur provider cost;
+opening the site and logging in do not.
+
+Use bounded operational output:
+
+```powershell
+docker compose -p devsignal-https -f docker-compose.deploy.yml --env-file .env.deploy ps
+docker compose -p devsignal-https -f docker-compose.deploy.yml --env-file .env.deploy logs --tail 100 caddy web api ai
+```
+
+For backup operations, use `mongodump`/`mongorestore` against MongoDB through
+an isolated administrative connection, and use the Qdrant snapshot API for
+the configured collection. Copy resulting artifacts to protected storage and
+restore both into a separate test project before relying on a backup. An
+image rollback is not a data rollback: MongoDB and Qdrant data formats and
+application schema compatibility must be checked separately.
+
+Application updates should be built and started under the same explicit
+Compose project after reviewing the image changes. To roll back, use the
+previous application source/image versions and recreate only the affected
+application services after confirming database compatibility. To stop without
+deleting data:
+
+```powershell
+docker compose -p devsignal-https -f docker-compose.deploy.yml --env-file .env.deploy stop
+```
+
+Do not use `down -v` or volume-prune commands as routine recovery. This
+configuration is prepared only; no hosted deployment, DNS change, certificate
+request, or data migration has been performed. Local data is not copied to
+this deployment automatically.
+
 ## Environment configuration
 
 Create files only from the tracked examples. The required values are:

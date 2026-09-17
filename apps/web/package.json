@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test:imports": "node --import tsx --test test/repository-zip-import.test.ts test/pdf-import.test.ts",
+    "test:imports": "node --import tsx --test test/repository-zip-import.test.ts test/pdf-import.test.ts test/api-client.test.ts",
     "test:browser": "playwright test"
   },
   "dependencies": {

@@ -41,15 +41,22 @@ function isErrorResponse(value: unknown): value is ErrorResponse {
   return typeof value.error.code === "string" && typeof value.error.message === "string";
 }
 
-function getBaseUrl(): string | null {
-  const configuredUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
+export function resolveApiBaseUrl(configuredUrl: string | undefined, origin?: string): string | null {
   if (!configuredUrl) return null;
 
   try {
-    return new URL(configuredUrl).toString().replace(/\/$/, "");
+    const base = new URL(configuredUrl, origin);
+    return base.toString().replace(/\/$/, "");
   } catch {
     return null;
   }
+}
+
+function getBaseUrl(): string | null {
+  return resolveApiBaseUrl(
+    process.env.NEXT_PUBLIC_API_BASE_URL,
+    typeof window === "undefined" ? undefined : window.location.origin,
+  );
 }
 
 export async function request<T>(

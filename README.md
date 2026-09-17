@@ -301,6 +301,100 @@ configuration is prepared only; no hosted deployment, DNS change, certificate
 request, or data migration has been performed. Local data is not copied to
 this deployment automatically.
 
+### Backup and isolated restore rehearsal
+
+Backups are separate MongoDB and Qdrant operations, not an atomic
+cross-store snapshot. Before backing up, schedule maintenance and stop
+application writes manually. For the deployment project:
+
+```powershell
+docker compose -p devsignal-https -f docker-compose.deploy.yml --env-file .env.deploy stop web api ai
+```
+
+The backup tooling requires an explicit acknowledgment that writes are
+paused. It does not stop services automatically, publish database ports, or
+export container environments:
+
+```powershell
+node scripts/backup.mjs `
+  --project devsignal-https `
+  --compose-file docker-compose.deploy.yml `
+  --env-path .env.deploy `
+  --output backups\2026-09-17T1530Z `
+  --collection devsignal_knowledge_chunks `
+  --dry-run
+
+node scripts/backup.mjs `
+  --project devsignal-https `
+  --compose-file docker-compose.deploy.yml `
+  --env-path .env.deploy `
+  --output backups\2026-09-17T1530Z `
+  --collection devsignal_knowledge_chunks `
+  --writes-paused
+```
+
+The output directory must not already exist. A successful backup contains
+`mongodb.archive`, `qdrant-collection.snapshot`, and
+`backup-manifest.json`. The manifest records format version, UTC time, commit
+when available, database/collection names, pinned service images, artifact
+sizes, SHA-256 checksums, and complete status. If either operation fails,
+`backup-manifest.incomplete.json` is preserved and no success manifest is
+written. Backup artifacts contain private user data; protect them with
+restricted filesystem permissions and encrypted off-machine storage. Never
+put credentials, connection strings, note text, or environment dumps in the
+manifest.
+
+Before restore, validate the manifest and checksums without invoking any
+database or snapshot operation:
+
+```powershell
+node scripts/restore.mjs `
+  --project restore-test-20260917 `
+  --compose-file docker-compose.restore.yml `
+  --manifest backups\2026-09-17T1530Z\backup-manifest.json
+```
+
+Restore requires the `restore-test-` project prefix, a complete manifest, safe
+artifact paths, matching sizes/checksums, and a target with no existing
+containers or volumes. It never defaults to the local or deployment project.
+Execute only after reviewing the dry-run plan:
+
+```powershell
+node scripts/restore.mjs `
+  --project restore-test-20260917 `
+  --compose-file docker-compose.restore.yml `
+  --manifest backups\2026-09-17T1530Z\backup-manifest.json `
+  --execute
+```
+
+The isolated restore Compose file has fresh private MongoDB and Qdrant
+volumes and no published database ports. The script creates a protected
+temporary restore credential file, removes it in a `finally` path, and leaves
+the restore environment running for inspection; it never deletes containers
+or volumes automatically. Verify read-only state with commands such as:
+
+```powershell
+docker compose -p restore-test-20260917 -f docker-compose.restore.yml ps
+docker compose -p restore-test-20260917 -f docker-compose.restore.yml exec mongo sh -c 'mongosh --quiet --username "$MONGO_INITDB_ROOT_USERNAME" --password "$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin --eval "db.getSiblingDB(\"devsignal\").getCollectionNames()"'
+```
+
+Use the pinned Qdrant version's read-only collection information and snapshot
+API through a temporary network client; do not expose Qdrant publicly. Keep
+application services stopped until both stores have completed backup, because
+simultaneous indexing or editing can make the two stores inconsistent. Resume
+the application services manually only after verification:
+
+```powershell
+docker compose -p devsignal-https -f docker-compose.deploy.yml --env-file .env.deploy start api web ai
+```
+
+A backup is not proven recoverable until an isolated restore rehearsal
+succeeds. Image rollback and data restoration are different operations, and
+an image rollback does not roll back database or vector-store data. Store an
+off-machine copy and rehearse restoration into a separate project. No
+destructive cleanup command belongs in the normal workflow; in particular,
+do not use `down -v` or volume pruning for backup recovery.
+
 ## Environment configuration
 
 Create files only from the tracked examples. The required values are:

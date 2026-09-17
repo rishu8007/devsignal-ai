@@ -51,3 +51,4 @@ temp/
 /test-results/
 /apps/web/playwright-report/
 /apps/web/test-results/
+/backups/

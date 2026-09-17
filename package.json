@@ -13,7 +13,8 @@
     "dev:api": "npm run dev --workspace=services/api",
     "build": "npm run build --workspaces --if-present",
     "lint": "npm run lint --workspaces --if-present",
-    "test": "npm run test --workspaces --if-present"
+    "test": "npm run test --workspaces --if-present",
+    "test:backup": "node --test scripts/backup-workflow.test.mjs"
   },
   "engines": {
     "node": ">=22"

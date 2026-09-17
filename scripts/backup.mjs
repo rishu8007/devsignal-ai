@@ -13,7 +13,10 @@ import {
 } from "./backup-workflow.mjs";
 
 async function run(command, args, { input } = {}) {
-  const child = execFile(command, args, { maxBuffer: 1024 * 1024 * 16 });
+  const child = execFile(command, args, {
+    encoding: "buffer",
+    maxBuffer: 1024 * 1024 * 16,
+  });
   if (input) child.stdin.end(input);
   const result = await new Promise((resolveResult, reject) => {
     let stdout = Buffer.alloc(0);

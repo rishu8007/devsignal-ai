@@ -10,6 +10,7 @@ import {
   INCOMPLETE_MANIFEST_FILE,
   MANIFEST_FILE,
   mongoDumpCommand,
+  qdrantRestoreCommand,
   qdrantSnapshotCommand,
   safeProjectName,
   validateManifest,
@@ -158,4 +159,12 @@ test("command construction keeps credentials out of process arguments and logs",
     helperPath: "scripts/qdrant-snapshot.mjs",
   });
   assert.equal(qdrant.args.includes("secret"), false);
+  const restore = qdrantRestoreCommand({
+    project: "restore-test-20260917",
+    backupDirectory: "backups/test",
+    collection: "devsignal_knowledge_chunks",
+    helperPath: "scripts/qdrant-restore.mjs",
+  });
+  assert.equal(restore.copy.args.includes("secret"), false);
+  assert.equal(restore.args.includes("--location"), true);
 });

@@ -108,6 +108,8 @@ export function mongoRestoreCommand(options) {
 }
 
 export function qdrantRestoreCommand({ project, backupDirectory, collection, helperPath }) {
+  const snapshotPath = `${resolve(backupDirectory)}\\qdrant-collection.snapshot`;
+  const snapshotLocation = "file:///qdrant/snapshots/devsignal-restore.snapshot";
   return {
     command: "docker",
     args: [
@@ -124,10 +126,14 @@ export function qdrantRestoreCommand({ project, backupDirectory, collection, hel
       "/qdrant-restore.mjs",
       "--collection",
       collection,
-      "--input",
-      "/backup/qdrant-collection.snapshot",
+      "--location",
+      snapshotLocation,
     ],
-    log: "docker run --rm --network <restore-project>_default node:22-bookworm-slim qdrant restore helper",
+    copy: {
+      command: "docker",
+      args: ["cp", snapshotPath, `${safeProjectName(project)}-qdrant-1:/qdrant/snapshots/devsignal-restore.snapshot`],
+    },
+    log: "docker cp [backup]/qdrant-collection.snapshot <restore-project>-qdrant-1:/qdrant/snapshots/devsignal-restore.snapshot; docker run --rm --network <restore-project>_default node:22-bookworm-slim qdrant restore helper",
   };
 }
 

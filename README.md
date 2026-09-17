@@ -395,6 +395,35 @@ off-machine copy and rehearse restoration into a separate project. No
 destructive cleanup command belongs in the normal workflow; in particular,
 do not use `down -v` or volume pruning for backup recovery.
 
+#### Completed local rehearsal record
+
+On 2026-09-17, application commit metadata was recorded in the generated
+manifest when available. With the local `devsignal-ai` web/API/AI containers
+stopped and MongoDB/Qdrant left running, the following secret-free operation
+was completed:
+
+```powershell
+node scripts/backup.mjs --project devsignal-ai --compose-file docker-compose.yml --env-path .env --output backups\20260917T1648Z --collection devsignal_knowledge_chunks --writes-paused
+node scripts/restore.mjs --project restore-test-20260917-1648 --compose-file docker-compose.restore.yml --manifest backups\20260917T1648Z\backup-manifest.json
+node scripts/restore.mjs --project restore-test-20260917-1655 --compose-file docker-compose.restore.yml --manifest backups\20260917T1648Z\backup-manifest.json --execute
+docker compose -p restore-test-20260917-1655 -f docker-compose.restore.yml stop
+```
+
+The backup manifest and both artifact checksums validated. The isolated
+restore completed into fresh volumes with no published database ports.
+Read-only verification matched the paused baseline: MongoDB collections
+`users=7`, `signals=7`, `generations=4`, and `knowledgeSources=7`; Qdrant
+`points_count=7`, vector size `1536`, and distance `Cosine`. Counts and
+collection configuration were checked, but this does not prove every
+application query or future restore is correct. The original web/API/AI
+containers were restarted and healthy afterward. Restore projects
+`restore-test-20260917-1638`, `restore-test-20260917-1645`, and
+`restore-test-20260917-1648` remain stopped with their separate volumes for
+diagnosis; the successful `restore-test-20260917-1655` volumes are also
+retained. The earlier `backups\20260917T1638Z-2` backup remains retained but
+must not be used because it was created before the binary archive fix and is
+corrupt. No live restore was performed against a hosted deployment.
+
 ## Environment configuration
 
 Create files only from the tracked examples. The required values are:

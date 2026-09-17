@@ -13,7 +13,10 @@ import {
 } from "./backup-workflow.mjs";
 
 async function run(command, args, { input } = {}) {
-  const child = execFile(command, args, { maxBuffer: 1024 * 1024 * 16 });
+  const child = execFile(command, args, {
+    encoding: "buffer",
+    maxBuffer: 1024 * 1024 * 16,
+  });
   if (input) child.stdin.end(input);
   return new Promise((resolveResult, reject) => {
     let stdout = Buffer.alloc(0);
@@ -74,7 +77,15 @@ async function main() {
   const restorePassword = `restore_${process.pid}_${Date.now()}_protected`;
   await writeFile(temporaryEnv, `MONGO_ROOT_USERNAME=restore_admin\nMONGO_ROOT_PASSWORD=${restorePassword}\n`, { mode: 0o600 });
   try {
-    const compose = composeArgs(restoreOptions, ["--env-file", temporaryEnv, "up", "-d"]);
+    const compose = composeArgs(restoreOptions, [
+      "--env-file",
+      temporaryEnv,
+      "up",
+      "-d",
+      "--wait",
+      "--wait-timeout",
+      "120",
+    ]);
     await run("docker", compose);
     const mongoArtifact = manifest.artifacts.find((artifact) => artifact.kind === "mongodb-dump");
     const qdrantArtifact = manifest.artifacts.find((artifact) => artifact.kind === "qdrant-collection-snapshot");
@@ -90,6 +101,7 @@ async function main() {
       helperPath: resolve("scripts/qdrant-restore.mjs"),
     });
     console.log(qdrant.log);
+    await run(qdrant.copy.command, qdrant.copy.args);
     await run(qdrant.command, qdrant.args);
     console.log("Restore completed. Services remain running for read-only verification.");
   } finally {

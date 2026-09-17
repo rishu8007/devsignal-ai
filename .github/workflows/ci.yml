@@ -150,3 +150,26 @@ jobs:
 
       - name: Run pytest
         run: pytest
+
+  operations:
+    name: Operations checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Run offline backup and restore tests
+        run: npm run test:backup
+
+      - name: Check operational script syntax
+        run: |
+          node --check scripts/backup-workflow.mjs
+          node --check scripts/backup.mjs
+          node --check scripts/restore.mjs
+          node --check scripts/qdrant-snapshot.mjs
+          node --check scripts/qdrant-restore.mjs

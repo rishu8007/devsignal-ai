@@ -108,7 +108,7 @@ export function mongoRestoreCommand(options) {
 }
 
 export function qdrantRestoreCommand({ project, backupDirectory, collection, helperPath }) {
-  const snapshotPath = `${resolve(backupDirectory)}\\qdrant-collection.snapshot`;
+  const snapshotPath = join(resolve(backupDirectory), "qdrant-collection.snapshot");
   const snapshotLocation = "file:///qdrant/snapshots/devsignal-restore.snapshot";
   return {
     command: "docker",

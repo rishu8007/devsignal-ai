@@ -20,6 +20,7 @@ declare global {
       signalQuery: ListSignalsQuery;
       signalId: string;
       variationId: string;
+      workflowId: string;
       draftQuery: ListDraftsQuery;
       calendarQuery: CalendarQuery;
       knowledgeSourceParams: KnowledgeSourceParams;

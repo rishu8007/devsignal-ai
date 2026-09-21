@@ -9,6 +9,7 @@ class RetrievalRequest(BaseModel):
     owner_id: StrictStr = Field(alias="ownerId")
     query: StrictStr
     limit: StrictInt
+    source_ids: list[StrictStr] | None = Field(default=None, alias="sourceIds", max_length=5)
 
 
 class RetrievalCandidateData(BaseModel):

@@ -34,6 +34,7 @@ import { CalendarView } from "@/components/dashboard/calendar-view";
 import { KnowledgeSourcesView } from "@/components/dashboard/knowledge-sources-view";
 import { ProfileView } from "@/components/dashboard/profile-view";
 import { TopicPlannerView } from "@/components/dashboard/topic-planner-view";
+import { ResearchBriefView } from "@/components/dashboard/research-brief-view";
 
 export function DashboardWorkspace() {
   const { invalidateSession, status: authStatus } = useAuth();
@@ -72,6 +73,7 @@ export function DashboardWorkspace() {
   const [knowledgeMutationPending, setKnowledgeMutationPending] = useState(false);
   const [profileDirty, setProfileDirty] = useState(false);
   const [profileMutationPending, setProfileMutationPending] = useState(false);
+  const [researchSignal, setResearchSignal] = useState<PublicSignal | null>(null);
   const requestId = useRef(0);
   const listController = useRef<AbortController | null>(null);
   const generationRequestId = useRef(0);
@@ -705,6 +707,7 @@ export function DashboardWorkspace() {
         selectedSignalId={selectedSignal?.id ?? null}
         onSelectSignal={handleSelectSignal}
         onEditSignal={handleStartSignalEditing}
+        onResearchSignal={setResearchSignal}
         editDisabled={(signal) =>
           selectedSignal?.id === signal.id &&
           (generation !== null || generationLoading || generationPending)
@@ -809,6 +812,7 @@ export function DashboardWorkspace() {
         onMutationPendingChange={setProfileMutationPending}
       />
       <TopicPlannerView active={activeTab === "planner"} />
+      {researchSignal && <ResearchBriefView signal={researchSignal} onClose={() => setResearchSignal(null)} />}
     </>
   );
 }

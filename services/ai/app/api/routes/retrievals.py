@@ -20,8 +20,19 @@ async def create_retrieval(
     request: RetrievalRequest,
     service: RetrievalService = Depends(require_internal_retrieval_service),  # noqa: B008
 ) -> RetrievalResponse:
+    return await retrieve_response(request, service)
+
+
+async def retrieve_response(
+    request: RetrievalRequest, service: RetrievalService
+) -> RetrievalResponse:
     try:
-        candidates = await service.retrieve(request.owner_id, request.query, request.limit)
+        if request.source_ids is None:
+            candidates = await service.retrieve(request.owner_id, request.query, request.limit)
+        else:
+            candidates = await service.retrieve(
+                request.owner_id, request.query, request.limit, request.source_ids
+            )
     except ValueError as exception:
         raise ApplicationError(400, "VALIDATION_ERROR", "Invalid request data") from exception
     except RetrievalError as exception:

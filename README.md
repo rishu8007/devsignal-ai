@@ -516,6 +516,30 @@ duplicate-conversion, independent-suggestion, and no-automatic-generation
 paths. Live MongoDB concurrency checks and browser-level reopening tests
 remain deferred; mocked tests do not prove database race behavior.
 
+## Saved research briefs
+
+From an existing Signal, the **Research** action lets an authenticated user
+select one to five indexed Knowledge sources and explicitly build a saved
+research brief. The brief contains relevant evidence, proposed talking
+points, claim assessments, missing information, questions, limitations, and
+expandable excerpts. Evidence is labeled as supported by selected sources;
+these assessments are not independently verified facts.
+
+Research uses personal Knowledge only. Retrieval is restricted to the
+selected owner-scoped sources, current indexed content versions, and bounded
+evidence excerpts. Evidence IDs are validated against the retrieved
+candidate set, and displayed quotations are copied from the retrieved text
+rather than trusted from model output. No-evidence results are valid and are
+shown explicitly. Research never edits a Signal, generates drafts, approves
+content, indexes sources, or schedules publication.
+
+Briefs are persisted with the Signal revision, source versions, and an input
+fingerprint. Reopening a brief rechecks current Signal/source versions and
+marks historical results stale without deleting them. Request claiming uses
+database uniqueness; uncertain provider outcomes are persisted and are not
+automatically retried. Live MongoDB race rehearsal and browser-level research
+flow tests remain deferred, and external web research is not included.
+
 ## Environment configuration
 
 Create files only from the tracked examples. The required values are:

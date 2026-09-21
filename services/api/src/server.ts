@@ -3,6 +3,7 @@ import { app } from "./app.js";
 import { connectToDatabase, disconnectFromDatabase } from "./config/database.js";
 import { env } from "./config/env.js";
 import { ensureGenerationIndexes } from "./repositories/generation.repository.js";
+import { ensureResearchBriefIndexes } from "./repositories/research-brief.repository.js";
 
 let server: Server | undefined;
 let isShuttingDown = false;
@@ -46,6 +47,7 @@ async function startServer(): Promise<void> {
   try {
     await connectToDatabase();
     await ensureGenerationIndexes();
+    await ensureResearchBriefIndexes();
   } catch {
     console.error("Database connection failed; the API server was not started.");
     process.exitCode = 1;

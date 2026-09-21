@@ -11,6 +11,7 @@ interface RecentSignalsProps {
   selectedSignalId: string | null;
   onSelectSignal: (signal: PublicSignal) => void;
   onEditSignal: (signal: PublicSignal) => void;
+  onResearchSignal: (signal: PublicSignal) => void;
   editDisabled: (signal: PublicSignal) => boolean;
   selectionDisabled: boolean;
 }
@@ -24,6 +25,7 @@ export function RecentSignals({
   selectedSignalId,
   onSelectSignal,
   onEditSignal,
+  onResearchSignal,
   editDisabled,
   selectionDisabled,
 }: RecentSignalsProps) {
@@ -80,6 +82,7 @@ export function RecentSignals({
               >
                 {selectedSignalId === signal.id ? "Selected" : "View drafts"}
               </button>
+              <button type="button" onClick={() => onResearchSignal(signal)} disabled={selectionDisabled} className="ml-2 mt-4 rounded-lg border border-indigo-300 bg-white px-4 py-2 text-sm font-semibold text-indigo-700 disabled:opacity-50">Research</button>
               <button
                 type="button"
                 onClick={() => onEditSignal(signal)}

@@ -15,6 +15,7 @@ from app.config import get_settings
 from app.errors import ApplicationError
 from app.providers.embedding_provider import EmbeddingsAPI, OpenAIEmbeddingProvider
 from app.providers.openai_provider import OpenAIProvider, ResponsesAPI
+from app.providers.research_brief_provider import ResearchBriefProvider, ResearchResponses
 from app.providers.topic_planning_provider import TopicPlanningProvider, TopicResponses
 from app.repositories.qdrant_repository import QdrantAPI, QdrantVectorRepository
 from app.services.retrieval import RetrievalService
@@ -44,6 +45,11 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
         timeout=settings.openai_timeout_seconds,
         max_retries=2,
     )
+    research_client = AsyncOpenAI(
+        api_key=settings.openai_api_key.get_secret_value(),
+        timeout=settings.openai_timeout_seconds,
+        max_retries=0,
+    )
     application.state.provider = OpenAIProvider(
         cast(ResponsesAPI, client.responses),
         client.close,
@@ -52,8 +58,18 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
     application.state.topic_planning_provider = TopicPlanningProvider(
         cast(TopicResponses, client.responses), client.close, settings.openai_model
     )
+    application.state.research_brief_provider = ResearchBriefProvider(
+        cast(ResearchResponses, research_client.responses),
+        research_client.close,
+        settings.openai_model,
+    )
     application.state.embedding_provider = OpenAIEmbeddingProvider(
         cast(EmbeddingsAPI, client.embeddings),
+        settings.openai_embedding_model,
+        settings.openai_embedding_dimensions,
+    )
+    application.state.research_embedding_provider = OpenAIEmbeddingProvider(
+        cast(EmbeddingsAPI, research_client.embeddings),
         settings.openai_embedding_model,
         settings.openai_embedding_dimensions,
     )
@@ -83,6 +99,14 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
             dimensions=settings.openai_embedding_dimensions,
         ),
     )
+    application.state.research_retrieval_service = RetrievalService(
+        application.state.research_embedding_provider,
+        application.state.qdrant_repository,
+        EmbeddingConfiguration(
+            model=settings.openai_embedding_model,
+            dimensions=settings.openai_embedding_dimensions,
+        ),
+    )
     logger.info("DevSignal AI service started")
     try:
         yield
@@ -90,7 +114,10 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
         try:
             await application.state.provider.close()
         finally:
-            await qdrant_client.close()
+            try:
+                await research_client.close()
+            finally:
+                await qdrant_client.close()
         logger.info("DevSignal AI service stopped")
 
 

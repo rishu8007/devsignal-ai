@@ -28,6 +28,7 @@ class VectorSearcher(Protocol):
         owner_id: str,
         query_vector: Sequence[float],
         limit: int,
+        source_ids: Sequence[str] | None = None,
     ) -> list[ChunkSearchResult]: ...
 
 
@@ -74,6 +75,7 @@ class RetrievalService:
         owner_id: str,
         query: str,
         limit: int,
+        source_ids: Sequence[str] | None = None,
     ) -> list[RetrievalCandidate]:
         normalized_owner_id = _validate_owner_id(owner_id)
         _validate_query(query)
@@ -88,11 +90,12 @@ class RetrievalService:
 
         vector = _validate_embedding(vectors, self._embedding_configuration.dimensions)
         try:
-            results = await self._vector_searcher.search(
-                normalized_owner_id,
-                vector,
-                limit,
-            )
+            if source_ids is None:
+                results = await self._vector_searcher.search(normalized_owner_id, vector, limit)
+            else:
+                results = await self._vector_searcher.search(
+                    normalized_owner_id, vector, limit, source_ids
+                )
         except QdrantRepositoryError as exception:
             raise RetrievalError(exception.kind) from exception
         except (TypeError, ValueError) as exception:

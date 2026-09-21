@@ -7,7 +7,13 @@ import {
 } from "./retrieval.types.js";
 
 export interface AiRetrievalClient {
-  retrieve(input: { ownerId: string; query: string; limit: number }): Promise<AiRetrievalCandidate[]>;
+  retrieve(input: {
+    ownerId: string;
+    query: string;
+    limit: number;
+    sourceIds?: string[];
+    researchOnly?: boolean;
+  }): Promise<AiRetrievalCandidate[]>;
 }
 
 export class AiRetrievalServiceClient implements AiRetrievalClient {
@@ -21,21 +27,24 @@ export class AiRetrievalServiceClient implements AiRetrievalClient {
     ownerId: string;
     query: string;
     limit: number;
+    sourceIds?: string[];
+    researchOnly?: boolean;
   }): Promise<AiRetrievalCandidate[]> {
     if (!this.internalApiKey) {
       throw new AppError(503, "AI_SERVICE_UNAVAILABLE", "The AI service is unavailable");
     }
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
+    const { researchOnly = false, ...requestBody } = input;
     let response: Response;
     try {
-      response = await this.fetchImplementation(`${env.AI_SERVICE_URL}/api/v1/retrievals`, {
+      response = await this.fetchImplementation(`${env.AI_SERVICE_URL}/api/v1/${researchOnly ? "research-retrievals" : "retrievals"}`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "X-Internal-API-Key": this.internalApiKey,
         },
-        body: JSON.stringify(input),
+        body: JSON.stringify(requestBody),
         redirect: "error",
         signal: controller.signal,
       });

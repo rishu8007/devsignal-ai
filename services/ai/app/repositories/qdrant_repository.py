@@ -191,12 +191,25 @@ class QdrantVectorRepository:
         owner_id: str,
         query_vector: Sequence[float],
         limit: int,
+        source_ids: Sequence[str] | None = None,
     ) -> list[ChunkSearchResult]:
         normalized_owner_id = _validate_object_id(owner_id, "owner_id")
         vector = _validate_vector(query_vector, self._vector_size)
         if limit < 1:
             raise ValueError("limit must be positive")
-        selector = models.Filter(must=[_match_condition("ownerId", normalized_owner_id)])
+        if source_ids is None:
+            selector = models.Filter(must=[_match_condition("ownerId", normalized_owner_id)])
+        else:
+            if not source_ids:
+                return []
+            selector = models.Filter(
+                must=[
+                    _match_condition("ownerId", normalized_owner_id),
+                    models.FieldCondition(
+                        key="sourceId", match=models.MatchAny(any=list(source_ids))
+                    ),
+                ]
+            )
         try:
             response = await self._client.query_points(
                 self._collection_name,

@@ -35,6 +35,7 @@ import { KnowledgeSourcesView } from "@/components/dashboard/knowledge-sources-v
 import { ProfileView } from "@/components/dashboard/profile-view";
 import { TopicPlannerView } from "@/components/dashboard/topic-planner-view";
 import { ResearchBriefView } from "@/components/dashboard/research-brief-view";
+import { DraftReviewPanel } from "@/components/dashboard/draft-review-panel";
 
 export function DashboardWorkspace() {
   const { invalidateSession, status: authStatus } = useAuth();
@@ -74,6 +75,7 @@ export function DashboardWorkspace() {
   const [profileDirty, setProfileDirty] = useState(false);
   const [profileMutationPending, setProfileMutationPending] = useState(false);
   const [researchSignal, setResearchSignal] = useState<PublicSignal | null>(null);
+  const [reviewTarget, setReviewTarget] = useState<{ variationId: string } | null>(null);
   const requestId = useRef(0);
   const listController = useRef<AbortController | null>(null);
   const generationRequestId = useRef(0);
@@ -746,7 +748,23 @@ export function DashboardWorkspace() {
             void loadGeneration(selectedSignal);
           }
         }}
+        onReview={(variationId) => setReviewTarget({ variationId })}
           />
+          {reviewTarget && selectedSignal && generation && (
+            <DraftReviewPanel
+              signalId={selectedSignal.id}
+              variationId={reviewTarget.variationId}
+              onClose={() => setReviewTarget(null)}
+              onCreateResearch={() => {
+                setResearchSignal(selectedSignal);
+                setReviewTarget(null);
+              }}
+              onApplied={(updated) => {
+                setGeneration(updated);
+                setReviewTarget(null);
+              }}
+            />
+          )}
         </>
       )}
       {activeTab === "drafts" && (

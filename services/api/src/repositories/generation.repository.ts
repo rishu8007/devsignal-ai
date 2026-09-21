@@ -61,6 +61,7 @@ export function updateGenerationVariation(
   if (update.content !== undefined) {
     fields["variations.$.content"] = update.content;
   }
+
   if (update.scheduledFor !== undefined) {
     fields["variations.$.scheduledFor"] = update.scheduledFor;
   }
@@ -79,6 +80,33 @@ export function updateGenerationVariation(
   )
     .lean<GenerationDocument>()
     .exec();
+}
+
+export function updateGenerationVariationIfContentMatches(
+  ownerId: string,
+  signalId: string,
+  variationId: string,
+  expectedContent: string,
+  content: string,
+): Promise<GenerationDocument | null> {
+  return GenerationModel.findOneAndUpdate(
+    {
+      ownerId,
+      signalId,
+      "variations._id": variationId,
+      variations: { $elemMatch: { _id: variationId, content: expectedContent } },
+    },
+    {
+      $set: {
+        "variations.$.content": content,
+        "variations.$.status": "draft",
+        "variations.$.scheduledFor": null,
+        "variations.$.citations": [],
+        updatedAt: new Date(),
+      },
+    },
+    { new: true, runValidators: true },
+  ).lean<GenerationDocument>().exec();
 }
 
 export function scheduleGenerationVariation(

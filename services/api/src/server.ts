@@ -4,6 +4,7 @@ import { connectToDatabase, disconnectFromDatabase } from "./config/database.js"
 import { env } from "./config/env.js";
 import { ensureGenerationIndexes } from "./repositories/generation.repository.js";
 import { ensureResearchBriefIndexes } from "./repositories/research-brief.repository.js";
+import { ensureDraftReviewIndexes } from "./repositories/draft-review.repository.js";
 
 let server: Server | undefined;
 let isShuttingDown = false;
@@ -48,6 +49,7 @@ async function startServer(): Promise<void> {
     await connectToDatabase();
     await ensureGenerationIndexes();
     await ensureResearchBriefIndexes();
+    await ensureDraftReviewIndexes();
   } catch {
     console.error("Database connection failed; the API server was not started.");
     process.exitCode = 1;

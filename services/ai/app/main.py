@@ -13,6 +13,7 @@ from qdrant_client import AsyncQdrantClient
 from app.api.router import router
 from app.config import get_settings
 from app.errors import ApplicationError
+from app.providers.draft_review_provider import DraftReviewProvider, ReviewResponses
 from app.providers.embedding_provider import EmbeddingsAPI, OpenAIEmbeddingProvider
 from app.providers.openai_provider import OpenAIProvider, ResponsesAPI
 from app.providers.research_brief_provider import ResearchBriefProvider, ResearchResponses
@@ -60,6 +61,11 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
     )
     application.state.research_brief_provider = ResearchBriefProvider(
         cast(ResearchResponses, research_client.responses),
+        research_client.close,
+        settings.openai_model,
+    )
+    application.state.draft_review_provider = DraftReviewProvider(
+        cast(ReviewResponses, research_client.responses),
         research_client.close,
         settings.openai_model,
     )

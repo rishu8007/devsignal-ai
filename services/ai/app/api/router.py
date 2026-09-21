@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 
+from app.api.routes.draft_reviews import router as draft_reviews_router
 from app.api.routes.generations import router as generations_router
 from app.api.routes.health import router as health_router
 from app.api.routes.indexings import router as indexings_router
@@ -16,3 +17,4 @@ router.include_router(retrievals_router)
 router.include_router(topic_plans_router)
 router.include_router(research_briefs_router)
 router.include_router(research_retrievals_router)
+router.include_router(draft_reviews_router)

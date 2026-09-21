@@ -23,6 +23,7 @@ import {
   generationVariationParamsSchema,
   signalGenerationParamsSchema,
 } from "../validation/generation.validation.js";
+import { draftReviewRouter } from "./draft-review.routes.js";
 
 export const generationRouter = Router({ mergeParams: true });
 
@@ -50,6 +51,7 @@ generationRouter.post(
   validateRequest(generationRequestSchema),
   createGeneration,
 );
+generationRouter.use("/:variationId/reviews", draftReviewRouter);
 
 generationRouter.put(
   "/:variationId/schedule",

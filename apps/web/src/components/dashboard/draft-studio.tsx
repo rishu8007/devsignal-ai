@@ -37,6 +37,7 @@ interface DraftStudioProps {
   onRemoveSchedule: (variationId: string) => void;
   onGenerate: () => void;
   onRetry: () => void;
+  onReview: (variationId: string) => void;
 }
 
 const labels: Record<GenerationAngle, string> = {
@@ -71,6 +72,7 @@ export function DraftStudio({
   onRemoveSchedule,
   onGenerate,
   onRetry,
+  onReview,
 }: DraftStudioProps) {
   const [scheduleInputs, setScheduleInputs] = useState<Record<string, { date: string; time: string }>>({});
   const [selectedSource, setSelectedSource] = useState<{
@@ -433,6 +435,14 @@ export function DraftStudio({
                         className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         Edit
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onReview(variation.id)}
+                        disabled={mutationPending || editingVariationId !== null}
+                        className="rounded-lg border border-indigo-300 px-4 py-2 text-sm font-semibold text-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        Review draft
                       </button>
                       {!isApproved && (
                         <button

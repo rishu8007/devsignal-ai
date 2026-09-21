@@ -540,6 +540,26 @@ database uniqueness; uncertain provider outcomes are persisted and are not
 automatically retried. Live MongoDB race rehearsal and browser-level research
 flow tests remain deferred, and external web research is not included.
 
+## Technical draft review
+
+From an existing draft, **Review draft** requires a current saved research
+brief for the same Signal. The reviewer compares the exact saved draft
+snapshot with only that brief's validated evidence and stores bounded,
+advisory findings. Findings distinguish evidence concerns from writing advice;
+“unsupported” means unsupported by the supplied material, not false.
+
+Users can inspect saved review history, edit an optional proposed revision,
+and explicitly apply it. Applying uses an atomic expected-content predicate,
+does not call AI again, and resets approval, scheduling, and citations using
+the existing draft-edit behavior. Reviews become stale when the draft, Signal,
+or selected Knowledge versions change. Review requests use a unique request
+key, persist failed/uncertain outcomes, and use the research no-retry provider
+path. Reviews never approve, publish, schedule, index, or generate drafts.
+
+Live MongoDB race rehearsal and browser-level review/apply regression tests
+remain deferred; mocked service tests do not prove distributed concurrency
+safety.
+
 ## Environment configuration
 
 Create files only from the tracked examples. The required values are:

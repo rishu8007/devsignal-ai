@@ -51,6 +51,29 @@ application. This milestone does not assume either permission. Mocked provider
 tests cover the local boundary; live LinkedIn consent, product approval,
 provider revocation, and browser redirect checks remain deferred.
 
+LinkedIn text publishing is a separate, opt-in capability. Set
+`LINKEDIN_PUBLISHING_ENABLED=true` only after the configured application has
+the documented member-posting product and request `w_member_social` through
+the explicit posting-consent flow. A user can publish only an owned,
+currently approved variation. The API creates an expiring server-derived
+preview containing the exact text, account, visibility, and content hash;
+confirmation revalidates those inputs immediately before an atomic dispatch
+claim. Publication records are immutable snapshots with bounded owner-scoped
+history. Duplicate previews and confirmations reuse the existing operation,
+while timeouts, connection loss, missing identifiers, and persistence
+ambiguity become uncertain and never automatically repost.
+
+Publishing uses LinkedIn's documented `POST /rest/posts` member endpoint with
+`X-Restli-Protocol-Version: 2.0.0`, a configured `LinkedIn-Version`, the
+authenticated member's `urn:li:person:{id}` author, `PUBLIC` visibility, and
+text commentary. The documented post identifier is read from `x-restli-id`
+(or a validated response identifier). Organization posts, media, scheduling,
+analytics, and automatic publishing are not implemented. See the
+[Posts API documentation](https://learn.microsoft.com/en-us/linkedin/marketing/community-management/shares/posts-api?view=li-lms-2025-10)
+and [member authorization documentation](https://learn.microsoft.com/en-us/linkedin/shared/authentication/authorization-code-flow).
+Live compatibility, product approval, and real-provider behavior remain
+deferred; all local tests use mocked provider responses.
+
 ## Signal content workflow
 
 The dashboard can start a bounded, persisted workflow from a saved Signal

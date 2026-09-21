@@ -721,6 +721,7 @@ export function DashboardWorkspace() {
           <DraftStudio
         key={`${authStatus}:${selectedSignal?.id ?? ""}`}
         signalTopic={selectedSignal?.topic ?? null}
+        signalId={selectedSignal?.id ?? null}
         onAuthenticationExpired={invalidateSession}
         generation={generation}
         useKnowledge={useKnowledge}

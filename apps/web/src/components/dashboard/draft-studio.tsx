@@ -13,9 +13,11 @@ import type {
 } from "@/lib/api/generation-client";
 import { CopyDraftButton } from "@/components/dashboard/copy-draft-button";
 import { downloadDraftMarkdown } from "@/lib/markdown-export";
+import { LinkedInPublishAction } from "@/components/dashboard/linkedin-publish-action";
 
 interface DraftStudioProps {
   signalTopic: string | null;
+  signalId: string | null;
   onAuthenticationExpired: () => void;
   generation: PublicGeneration | null;
   useKnowledge: boolean;
@@ -51,6 +53,7 @@ const MAX_CONTENT_LENGTH = 3000;
 
 export function DraftStudio({
   signalTopic,
+  signalId,
   onAuthenticationExpired,
   generation,
   useKnowledge,
@@ -478,6 +481,9 @@ export function DraftStudio({
                           ? "Markdown download initiated. Check your browser downloads."
                           : "Unable to start the Markdown download."}
                       </p>
+                    )}
+                    {isApproved && (
+                      signalId && <LinkedInPublishAction signalId={signalId} variationId={variation.id} />
                     )}
                     {isApproved && (
                       <ScheduleControls

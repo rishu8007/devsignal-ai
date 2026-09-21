@@ -1,8 +1,13 @@
 import { LinkedInConnectionModel, type LinkedInConnectionDocument } from "../models/linkedin-connection.model.js";
 import { LinkedInOauthStateModel, type LinkedInOauthStateDocument } from "../models/linkedin-oauth-state.model.js";
+import { LinkedInPublicationModel, type LinkedInPublicationDocument } from "../models/linkedin-publication.model.js";
 
 export function ensureLinkedInIndexes(): Promise<void> {
-  return Promise.all([LinkedInConnectionModel.createIndexes(), LinkedInOauthStateModel.createIndexes()]).then(() => undefined);
+  return Promise.all([
+    LinkedInConnectionModel.createIndexes(),
+    LinkedInOauthStateModel.createIndexes(),
+    LinkedInPublicationModel.createIndexes(),
+  ]).then(() => undefined);
 }
 
 export function createLinkedInOauthState(input: Record<string, unknown>) {
@@ -34,4 +39,36 @@ export function disconnectLinkedInConnection(ownerId: string) {
     { ownerId },
     { $set: { status: "reconnect_required", accessTokenEncrypted: null, refreshTokenEncrypted: null }, $inc: { connectionGeneration: 1 } },
   ).exec();
+}
+
+export function findLinkedInPublication(ownerId: string, id: string) {
+  return LinkedInPublicationModel.findOne({ ownerId, previewId: id }).lean<LinkedInPublicationDocument>().exec();
+}
+
+export function findLinkedInPublicationByOperationKey(ownerId: string, operationKey: string) {
+  return LinkedInPublicationModel.findOne({ ownerId, operationKey }).lean<LinkedInPublicationDocument>().exec();
+}
+
+export function createLinkedInPublication(input: Record<string, unknown>) {
+  return LinkedInPublicationModel.create(input);
+}
+
+export function claimLinkedInPublication(id: string, now: Date) {
+  return LinkedInPublicationModel.findOneAndUpdate(
+    { _id: id, status: "pending", previewExpiresAt: { $gt: now } },
+    { $set: { status: "dispatching", dispatchedAt: now, updatedAt: now } },
+    { new: true },
+  ).lean<LinkedInPublicationDocument>().exec();
+}
+
+export function updateLinkedInPublication(id: string, update: Record<string, unknown>) {
+  return LinkedInPublicationModel.findByIdAndUpdate(id, { $set: update }, { new: true })
+    .lean<LinkedInPublicationDocument>()
+    .exec();
+}
+
+export function listLinkedInPublications(ownerId: string) {
+  return LinkedInPublicationModel.find({ ownerId }).sort({ createdAt: -1, _id: -1 }).limit(50)
+    .lean<LinkedInPublicationDocument[]>()
+    .exec();
 }

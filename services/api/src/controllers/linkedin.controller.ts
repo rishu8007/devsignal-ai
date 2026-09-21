@@ -20,7 +20,13 @@ export async function linkedinStatus(request: Request, response: Response): Prom
 
 export async function linkedinConnect(request: Request, response: Response): Promise<void> {
   const cookie = request.cookies?.[env.AUTH_COOKIE_NAME];
-  const result = await beginLinkedInConnection(userId(request), cookie, request.body.returnPath);
+  const result = await beginLinkedInConnection(userId(request), cookie, request.body.returnPath, request.body.posting);
+  response.status(200).json({ success: true, data: result });
+}
+
+export async function linkedinPostingConsent(request: Request, response: Response): Promise<void> {
+  const cookie = request.cookies?.[env.AUTH_COOKIE_NAME];
+  const result = await beginLinkedInConnection(userId(request), cookie, request.body.returnPath, true);
   response.status(200).json({ success: true, data: result });
 }
 

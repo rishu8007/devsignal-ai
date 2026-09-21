@@ -15,6 +15,24 @@ import { linkedinOAuthClient, type LinkedInOAuthClient } from "../clients/linked
 const stateLifetimeMs = 10 * 60 * 1000;
 const allowedReturnPath = "/dashboard?tab=connections";
 
+export interface LinkedInConnectionRepository {
+  consumeState: typeof consumeLinkedInOauthState;
+  createState: typeof createLinkedInOauthState;
+  findConnection: typeof findLinkedInConnection;
+  createConnection: typeof createLinkedInConnection;
+  updateConnection: typeof updateLinkedInConnection;
+  disconnectConnection: typeof disconnectStoredLinkedInConnection;
+}
+
+const defaultRepository: LinkedInConnectionRepository = {
+  consumeState: consumeLinkedInOauthState,
+  createState: createLinkedInOauthState,
+  findConnection: findLinkedInConnection,
+  createConnection: createLinkedInConnection,
+  updateConnection: updateLinkedInConnection,
+  disconnectConnection: disconnectStoredLinkedInConnection,
+};
+
 function hash(value: string): string {
   return createHash("sha256").update(value).digest("base64url");
 }
@@ -45,16 +63,17 @@ function publicConnection(connection: Awaited<ReturnType<typeof findLinkedInConn
   };
 }
 
-export function getLinkedInStatus(ownerId: string) {
-  if (!env.LINKEDIN_ENABLED) return Promise.resolve({ enabled: false, status: "not_configured" as const });
-  return findLinkedInConnection(ownerId).then((connection) => ({
+export function getLinkedInStatus(ownerId: string, repository: LinkedInConnectionRepository = defaultRepository) {
+  if (!env.LINKEDIN_ENABLED) return Promise.resolve({ enabled: false, publishingEnabled: false, status: "not_configured" as const });
+  return repository.findConnection(ownerId).then((connection) => ({
     enabled: true,
+    publishingEnabled: env.LINKEDIN_PUBLISHING_ENABLED,
     ...publicConnection(connection),
     status: connection && connection.expiresAt <= new Date() ? "reconnect_required" : publicConnection(connection).status,
   }));
 }
 
-export async function beginLinkedInConnection(ownerId: string, sessionCookie: string, returnPath: unknown): Promise<{ authorizationUrl: string }> {
+export async function beginLinkedInConnection(ownerId: string, sessionCookie: string, returnPath: unknown, posting = false, repository: LinkedInConnectionRepository = defaultRepository): Promise<{ authorizationUrl: string }> {
   requireEnabled();
   if (!sessionCookie) throw new AppError(401, "AUTHENTICATION_REQUIRED", "Authentication is required.");
   if (!env.LINKEDIN_CLIENT_ID || !env.LINKEDIN_REDIRECT_URI || !env.LINKEDIN_TOKEN_ENCRYPTION_KEY) {
@@ -63,13 +82,15 @@ export async function beginLinkedInConnection(ownerId: string, sessionCookie: st
   const state = randomValue();
   const verifier = randomValue();
   const challenge = hash(verifier);
-  await createLinkedInOauthState({
+  const scopes = (posting ? env.LINKEDIN_POSTING_SCOPES : env.LINKEDIN_SCOPES).split(/\s+/).filter(Boolean);
+  await repository.createState({
     stateHash: hash(state),
     ownerId,
     sessionHash: hash(sessionCookie),
     codeVerifierEncrypted: encryptLinkedInSecret(verifier, env.LINKEDIN_TOKEN_ENCRYPTION_KEY),
     returnPath: safeReturnPath(returnPath),
-    connectionGeneration: (await findLinkedInConnection(ownerId))?.connectionGeneration ?? 0,
+    connectionGeneration: (await repository.findConnection(ownerId))?.connectionGeneration ?? 0,
+    requestedScopes: scopes,
     expiresAt: new Date(Date.now() + stateLifetimeMs),
   });
   const query = new URLSearchParams({
@@ -77,7 +98,7 @@ export async function beginLinkedInConnection(ownerId: string, sessionCookie: st
     client_id: env.LINKEDIN_CLIENT_ID,
     redirect_uri: env.LINKEDIN_REDIRECT_URI,
     state,
-    scope: env.LINKEDIN_SCOPES,
+    scope: scopes.join(" "),
     code_challenge: challenge,
     code_challenge_method: "S256",
   });
@@ -90,10 +111,11 @@ export async function completeLinkedInConnection(
   providerError: string | undefined,
   sessionCookie: string | undefined,
   client: LinkedInOAuthClient = linkedinOAuthClient,
+  repository: LinkedInConnectionRepository = defaultRepository,
 ): Promise<string> {
   const failurePath = `${env.WEB_ORIGIN}${allowedReturnPath}&linkedin=error`;
   if (!state || !sessionCookie) return failurePath;
-  const consumed = await consumeLinkedInOauthState(hash(state), hash(sessionCookie), new Date());
+  const consumed = await repository.consumeState(hash(state), hash(sessionCookie), new Date());
   if (!consumed) return failurePath;
   const returnPath = consumed.returnPath;
   const resultPath = `${env.WEB_ORIGIN}${returnPath}`;
@@ -109,7 +131,7 @@ export async function completeLinkedInConnection(
     if (error instanceof AppError) return `${resultPath}&linkedin=error`;
     throw error;
   }
-  const existing = await findLinkedInConnection(String(consumed.ownerId));
+  const existing = await repository.findConnection(String(consumed.ownerId));
   if (existing && existing.connectionGeneration !== consumed.connectionGeneration) {
     return `${resultPath}&linkedin=stale`;
   }
@@ -133,10 +155,10 @@ export async function completeLinkedInConnection(
     status: "connected",
     connectionGeneration: (existing?.connectionGeneration ?? 0) + 1,
   };
-  if (existing) await updateLinkedInConnection(String(consumed.ownerId), input);
+  if (existing)   await repository.updateConnection(String(consumed.ownerId), input);
   else {
     try {
-      await createLinkedInConnection(input);
+      await repository.createConnection(input);
     } catch (error) {
       if (error instanceof Error && "code" in error && (error as { code?: unknown }).code === 11000) {
         return `${resultPath}&linkedin=identity_in_use`;
@@ -147,7 +169,7 @@ export async function completeLinkedInConnection(
   return `${resultPath}&linkedin=connected`;
 }
 
-export async function disconnectLinkedInConnection(ownerId: string): Promise<void> {
+export async function disconnectLinkedInConnection(ownerId: string, repository: LinkedInConnectionRepository = defaultRepository): Promise<void> {
   requireEnabled();
-  await disconnectStoredLinkedInConnection(ownerId);
+  await repository.disconnectConnection(ownerId);
 }

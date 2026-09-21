@@ -2,6 +2,7 @@ import { request } from "./api-client";
 
 export interface LinkedInStatus {
   enabled: boolean;
+  publishingEnabled?: boolean;
   status: "not_configured" | "disconnected" | "connected" | "reconnect_required";
   connected?: boolean;
   identity?: { memberId: string; displayName: string | null; email: string | null };
@@ -25,6 +26,17 @@ export function connectLinkedIn(): Promise<{ authorizationUrl: string }> {
   return request("/connections/linkedin/connect", {
     method: "POST",
     body: JSON.stringify({ returnPath: "/dashboard?tab=connections" }),
+  }, (value): value is { data: { authorizationUrl: string } } => {
+    return typeof value === "object" && value !== null && "success" in value && value.success === true &&
+      "data" in value && typeof value.data === "object" && value.data !== null &&
+      "authorizationUrl" in value.data && typeof value.data.authorizationUrl === "string";
+  }).then((value) => value.data);
+}
+
+export function requestLinkedInPostingConsent(): Promise<{ authorizationUrl: string }> {
+  return request("/connections/linkedin/posting-consent", {
+    method: "POST",
+    body: JSON.stringify({ returnPath: "/dashboard?tab=connections", posting: true }),
   }, (value): value is { data: { authorizationUrl: string } } => {
     return typeof value === "object" && value !== null && "success" in value && value.success === true &&
       "data" in value && typeof value.data === "object" && value.data !== null &&

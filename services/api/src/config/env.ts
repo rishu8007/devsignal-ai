@@ -40,6 +40,9 @@ const environmentSchema = z.object({
   LINKEDIN_REDIRECT_URI: z.string().url().optional(),
   LINKEDIN_TOKEN_ENCRYPTION_KEY: z.string().optional(),
   LINKEDIN_SCOPES: z.string().default("openid profile email"),
+  LINKEDIN_POSTING_SCOPES: z.string().default("openid profile email w_member_social"),
+  LINKEDIN_API_VERSION: z.string().regex(/^\d{6}$/).default("202601"),
+  LINKEDIN_PUBLISHING_ENABLED: z.enum(["true", "false"]).default("false").transform((value) => value === "true"),
 });
 
 const parsedEnvironment = environmentSchema.safeParse(process.env);

@@ -8,6 +8,7 @@ const linkedinOauthStateSchema = new Schema(
     codeVerifierEncrypted: { type: String, required: true, immutable: true },
     returnPath: { type: String, required: true, immutable: true },
     connectionGeneration: { type: Number, required: true, immutable: true, default: 0 },
+    requestedScopes: { type: [String], required: true, immutable: true, default: [] },
     expiresAt: { type: Date, required: true, immutable: true },
     usedAt: { type: Date, default: null },
   },

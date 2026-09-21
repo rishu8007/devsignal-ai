@@ -33,9 +33,11 @@ Workflow-generated drafts retain the same server-owned citation mapping as
 manual Knowledge-grounded generation. Model-returned evidence IDs are checked
 against the exact supplied evidence, then mapped to the current source title,
 content version, chunk identity, and offsets before persistence; fabricated
-references fail the workflow. The current bounded workflow reviews the
-technical-depth variation, so the dashboard marks the other variations as
-requiring their own review rather than allowing them to be approved.
+references fail the workflow. The technical-depth review is reused when it is
+current; learning-story and professional-impact variations expose an explicit
+Review this variation action. Each review is bound to its own generation,
+variation, content hash, Signal, and research evidence before approval is
+enabled.
 
 For local workflow execution, configure the AI service with a dedicated
 checkpoint MongoDB URI and database (`WORKFLOW_CHECKPOINT_URI` and
@@ -55,9 +57,11 @@ checks remain deferred.
 
 The automated workflow tests use mocked providers and an in-memory LangGraph
 checkpointer, including rebuilding the graph executor before resume. They do
-not prove MongoDB checkpoint recovery or multi-worker races. The checkpoint
-database is separate from the application database when configured; backup
-coverage for that database must be extended before production rollout.
+not prove MongoDB checkpoint recovery or multi-worker races. Live approval
+competition, cancellation races, and browser reload/review-selection checks
+remain on the deferred testing checklist. The checkpoint database is separate
+from the application database when configured; backup coverage for that
+database must be extended before production rollout.
 
 ## Architecture
 
@@ -601,6 +605,11 @@ path. Reviews never approve, publish, schedule, index, or generate drafts.
 Live MongoDB race rehearsal and browser-level review/apply regression tests
 remain deferred; mocked service tests do not prove distributed concurrency
 safety.
+
+Workflow variation-review checks currently cover server-side binding helpers
+and mocked graph execution. Live MongoDB competing approvals, duplicate
+variation-review races, cancellation during an explicit review, and browser
+reload/selection recovery remain deferred.
 
 ## Environment configuration
 

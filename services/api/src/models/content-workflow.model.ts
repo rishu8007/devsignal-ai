@@ -15,6 +15,7 @@ const workflowSchema = new Schema(
     researchBriefId: { type: Schema.Types.ObjectId, default: null },
     generationId: { type: Schema.Types.ObjectId, default: null },
     reviewIds: { type: [Schema.Types.ObjectId], default: [] },
+    reviewBindings: { type: [Schema.Types.Mixed], default: [] },
     researchOutput: { type: Schema.Types.Mixed, default: null },
     generationOutput: { type: Schema.Types.Mixed, default: null },
     reviewOutput: { type: Schema.Types.Mixed, default: null },

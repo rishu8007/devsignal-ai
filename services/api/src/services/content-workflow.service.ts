@@ -6,6 +6,7 @@ import { createGeneration, findGenerationByOwnerAndSignal } from "../repositorie
 import { normalizeAiGenerationResult } from "./generation.service.js";
 import { findKnowledgeSourcesByIdsAndOwner } from "../repositories/knowledge-source.repository.js";
 import { createResearchBriefForUser } from "./research-brief.service.js";
+import { createDraftReviewForUser } from "./draft-review.service.js";
 import { findSignalByIdAndOwner } from "../repositories/signal.repository.js";
 import {
   claimNextContentWorkflow,
@@ -17,13 +18,57 @@ import {
   markExpiredContentWorkflowsUncertain,
   updateContentWorkflow,
   updateClaimedContentWorkflow,
+  addContentWorkflowReview,
 } from "../repositories/content-workflow.repository.js";
-import { createDraftReview, findDraftReviewByIdAndOwner } from "../repositories/draft-review.repository.js";
+import { createDraftReview, findDraftReviewByIdAndOwner, findDraftReviewByRequestId } from "../repositories/draft-review.repository.js";
 import type { ApprovalInput, StartWorkflowInput } from "../validation/content-workflow.validation.js";
 import type { GenerationAngle } from "../types/generation.js";
 
 const hash = (value: string) => createHash("sha256").update(value).digest("hex");
 const leaseDurationMs = 90_000;
+
+export function workflowReviewRequestId(
+  ownerId: string,
+  workflowId: string,
+  generationId: string,
+  variationId: string,
+  draftContentHash: string,
+  researchBriefId: string,
+  sourceVersions: Array<{ sourceId: string; contentVersion: number }>,
+  evidence: unknown,
+) {
+  const evidenceFingerprint = hash(JSON.stringify(evidence));
+  return `workflow-review-${hash(JSON.stringify({
+    ownerId,
+    workflowId,
+    generationId,
+    variationId,
+    draftContentHash,
+    researchBriefId,
+    sourceVersions,
+    evidenceFingerprint,
+  }))}`;
+}
+
+export interface WorkflowReviewBoundary {
+  findWorkflow: typeof findContentWorkflowByIdAndOwner;
+  findGeneration: typeof findGenerationByOwnerAndSignal;
+  findSources: typeof findKnowledgeSourcesByIdsAndOwner;
+  findSignal: typeof findSignalByIdAndOwner;
+  createReview: typeof createDraftReviewForUser;
+  addReview: typeof addContentWorkflowReview;
+  findLegacyReview: typeof findDraftReviewByRequestId;
+}
+
+const defaultWorkflowReviewBoundary: WorkflowReviewBoundary = {
+  findWorkflow: findContentWorkflowByIdAndOwner,
+  findGeneration: findGenerationByOwnerAndSignal,
+  findSources: findKnowledgeSourcesByIdsAndOwner,
+  findSignal: findSignalByIdAndOwner,
+  createReview: createDraftReviewForUser,
+  addReview: addContentWorkflowReview,
+  findLegacyReview: findDraftReviewByRequestId,
+};
 
 interface WorkflowEvidence {
   evidenceId: string;
@@ -41,6 +86,28 @@ interface WorkflowEvidence {
 interface WorkflowGenerationOutput {
   model: string;
   variations: Array<{ angle: GenerationAngle; content: string; citations: string[] }>;
+}
+
+export interface WorkflowReviewBinding {
+  variationId: string;
+  reviewId: string;
+  draftContentHash: string;
+  stale: boolean;
+  status: string;
+}
+
+export function findCurrentWorkflowReview(
+  bindings: WorkflowReviewBinding[],
+  variationId: string,
+  draftContentHash: string,
+) {
+  return bindings.find(
+    (binding) =>
+      binding.variationId === variationId &&
+      binding.draftContentHash === draftContentHash &&
+      binding.stale === false &&
+      binding.status === "succeeded",
+  );
 }
 
 export function mapWorkflowGenerationCitations(
@@ -84,6 +151,7 @@ function publicWorkflow(run: Awaited<ReturnType<typeof findContentWorkflowByIdAn
     researchBriefId: run.researchBriefId?.toString() ?? null,
     generationId: run.generationId?.toString() ?? null,
     reviewIds: run.reviewIds.map((id) => id.toString()),
+    reviewBindings: run.reviewBindings ?? [],
     researchOutput: run.researchOutput,
     generationOutput: run.generationOutput,
     reviewOutput: run.reviewOutput,
@@ -150,6 +218,107 @@ export async function listContentWorkflowsForUser(ownerId: string, signalId: str
   return (await listContentWorkflows(ownerId, signalId)).map(publicWorkflow);
 }
 
+export async function createContentWorkflowReviewForUser(
+  ownerId: string,
+  signalId: string,
+  workflowId: string,
+  input: { requestId: string; variationId: string },
+  boundary: WorkflowReviewBoundary = defaultWorkflowReviewBoundary,
+) {
+  ownerIsValid(ownerId);
+  const run = await boundary.findWorkflow(ownerId, workflowId);
+  if (!run || run.signalId.toString() !== signalId) {
+    throw new AppError(404, "WORKFLOW_NOT_FOUND", "Content workflow not found");
+  }
+  if (run.status !== "awaiting_approval" || !run.generationId || !run.researchBriefId) {
+    throw new AppError(409, "WORKFLOW_NOT_READY_FOR_REVIEW", "This workflow is not ready for variation review");
+  }
+  const generation = await boundary.findGeneration(ownerId, signalId);
+  const selected = generation?.variations.find((item) => item._id.toString() === input.variationId);
+  if (!generation || generation._id.toString() !== run.generationId.toString() || !selected) {
+    throw new AppError(404, "WORKFLOW_VARIATION_NOT_FOUND", "The selected draft variation was not found");
+  }
+  const sourceIds = run.sourceVersions
+    .map((item) => item.sourceId)
+    .filter((sourceId): sourceId is string => typeof sourceId === "string");
+  const currentSources = await boundary.findSources(ownerId, sourceIds);
+  const signal = await boundary.findSignal(ownerId, signalId);
+  if (
+    !signal ||
+    signal.revision !== run.signalRevision ||
+    currentSources.length !== run.sourceVersions.length ||
+    currentSources.some((source) =>
+      source.processingStatus !== "indexed" ||
+      source.indexedContentVersion !== source.contentVersion ||
+      !source.indexedChunkerVersion ||
+      !source.indexedEmbeddingModel ||
+      !source.indexedDimensions ||
+      run.sourceVersions.find((item) => item.sourceId === source._id.toString())?.contentVersion !== source.contentVersion,
+    )
+  ) {
+    throw new AppError(409, "WORKFLOW_STALE", "Workflow inputs changed; refresh the workflow before reviewing");
+  }
+  const existingBinding = findCurrentWorkflowReview(run.reviewBindings ?? [], input.variationId, hash(selected.content));
+  if (existingBinding) return publicWorkflow(run);
+  const draftContentHash = hash(selected.content);
+  const legacyReview = await boundary.findLegacyReview(ownerId, `workflow-${workflowId}-review-${input.variationId}`);
+  if (
+    legacyReview &&
+    legacyReview.signalId.toString() === signalId &&
+    legacyReview.generationId.toString() === generation._id.toString() &&
+    legacyReview.variationId.toString() === selected._id.toString() &&
+    legacyReview.researchBriefId.toString() === run.researchBriefId.toString() &&
+    legacyReview.draftContentHash === draftContentHash
+  ) {
+    const updatedLegacy = await boundary.addReview(workflowId, legacyReview._id, {
+      variationId: legacyReview.variationId.toString(),
+      reviewId: legacyReview._id.toString(),
+      draftContentHash: legacyReview.draftContentHash,
+      stale: legacyReview.stale,
+      status: legacyReview.status,
+      summary: legacyReview.summary,
+      findings: legacyReview.findings,
+      proposedDraft: legacyReview.proposedDraft,
+      model: legacyReview.model,
+    });
+    return publicWorkflow(updatedLegacy);
+  }
+  const requestId = workflowReviewRequestId(
+    ownerId,
+    workflowId,
+    generation._id.toString(),
+    selected._id.toString(),
+    draftContentHash,
+    run.researchBriefId.toString(),
+    run.sourceVersions
+      .map((item) => item.sourceId && item.contentVersion
+        ? { sourceId: item.sourceId, contentVersion: item.contentVersion }
+        : null)
+      .filter((item): item is { sourceId: string; contentVersion: number } => item !== null),
+    run.researchOutput?.evidence ?? [],
+  );
+  const review = await boundary.createReview(ownerId, signalId, input.variationId, {
+    requestId,
+    researchBriefId: run.researchBriefId.toString(),
+  });
+  const latest = await boundary.findWorkflow(ownerId, workflowId);
+  if (!latest || latest.status !== "awaiting_approval") {
+    throw new AppError(409, "WORKFLOW_CANCELLED", "The workflow changed while the review was running");
+  }
+  const updated = await boundary.addReview(workflowId, review.id, {
+    variationId: review.variationId,
+    reviewId: review.id,
+    draftContentHash: review.draftContentHash,
+    stale: review.stale,
+    status: review.status,
+    summary: review.summary,
+    findings: review.findings,
+    proposedDraft: review.proposedDraft,
+    model: review.model,
+  });
+  return publicWorkflow(updated);
+}
+
 export async function cancelContentWorkflowForUser(ownerId: string, signalId: string, workflowId: string) {
   ownerIsValid(ownerId);
   const run = await findContentWorkflowByIdAndOwner(ownerId, workflowId);
@@ -175,10 +344,9 @@ export async function approveContentWorkflowForUser(ownerId: string, signalId: s
   const generation = await findGenerationByOwnerAndSignal(ownerId, run.signalId.toString());
   const variation = generation?.variations.find((item) => item._id.toString() === input.variationId);
   if (!variation || hash(variation.content) !== input.draftHash) throw new AppError(409, "WORKFLOW_DRAFT_STALE", "The selected draft changed; review it again");
-  const review = run.reviewIds.length === 1 && run.reviewIds[0]
-    ? await findDraftReviewByIdAndOwner(ownerId, run.reviewIds[0].toString())
-    : null;
-  if (!review || review.variationId.toString() !== variation._id.toString() || review.draftContentHash !== input.draftHash || review.stale || review.status !== "succeeded") {
+  const reviewId = findCurrentWorkflowReview(run.reviewBindings ?? [], variation._id.toString(), input.draftHash)?.reviewId;
+  const review = reviewId ? await findDraftReviewByIdAndOwner(ownerId, reviewId) : null;
+  if (!review || review.signalId.toString() !== run.signalId.toString() || review.generationId.toString() !== generation?._id.toString() || review.researchBriefId.toString() !== run.researchBriefId?.toString() || review.variationId.toString() !== variation._id.toString() || review.draftContentHash !== input.draftHash || review.stale || review.status !== "succeeded") {
     throw new AppError(409, "WORKFLOW_REVIEW_STALE", "The selected draft does not have a current review");
   }
   const approved = await claimContentWorkflowApproval(workflowId, { status: "running", phase: "approval", approvedVariationId: variation._id, approvedDraftHash: input.draftHash });
@@ -333,12 +501,24 @@ async function advanceClaimedWorkflow(run: NonNullable<Awaited<ReturnType<typeof
     stale: false,
     model: reviewOutput.model,
   });
+  const technicalReviewBinding = {
+    variationId: technical._id.toString(),
+    reviewId: review._id.toString(),
+    draftContentHash: hash(technical.content),
+    stale: false,
+    status: "succeeded",
+    summary: reviewOutput.summary,
+    findings: reviewOutput.findings,
+    proposedDraft: reviewOutput.proposedDraft,
+    model: reviewOutput.model,
+  };
   return updateClaimedContentWorkflow(run._id.toString(), run.leaseId as string, {
     status: "awaiting_approval",
     phase: "approval",
     researchBriefId: research.id,
     generationId: generation._id,
     reviewIds: [review._id],
+    reviewBindings: [technicalReviewBinding],
     researchOutput: research,
     generationOutput: {
       ...generationOutput,

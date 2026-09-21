@@ -11,5 +11,10 @@ export const approvalSchema = z.object({
   variationId: id,
   draftHash: z.string().regex(/^[a-f\d]{64}$/i),
 }).strict();
+export const workflowReviewSchema = z.object({
+  requestId: z.string().trim().min(1).max(100).optional(),
+  variationId: id,
+}).strict();
 export type StartWorkflowInput = z.infer<typeof startWorkflowSchema>;
 export type ApprovalInput = z.infer<typeof approvalSchema>;
+export type WorkflowReviewInput = z.infer<typeof workflowReviewSchema>;

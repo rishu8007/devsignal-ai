@@ -32,6 +32,13 @@ export function updateClaimedContentWorkflow(id: string, leaseId: string, update
     { new: true },
   ).lean<ContentWorkflowDocument>().exec();
 }
+export function addContentWorkflowReview(id: string, reviewId: unknown, binding: Record<string, unknown>) {
+  return ContentWorkflowModel.findOneAndUpdate(
+    { _id: id, status: "awaiting_approval" },
+    { $addToSet: { reviewIds: reviewId, reviewBindings: binding } },
+    { new: true },
+  ).lean<ContentWorkflowDocument>().exec();
+}
 export function claimNextContentWorkflow(leaseId: string, expiresAt: Date) {
   return ContentWorkflowModel.findOneAndUpdate(
     { status: "queued", cancellationRequested: false },

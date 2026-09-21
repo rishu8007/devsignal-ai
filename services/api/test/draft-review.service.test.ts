@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { createHash } from "node:crypto";
 import { Types } from "mongoose";
 import { AppError } from "../src/errors/app-error.js";
 import { createDraftReviewForUser, applyDraftReviewForUser, type DraftReviewRepository } from "../src/services/draft-review.service.js";
@@ -40,11 +41,37 @@ test("rejects missing owner resources and fabricated review references", async (
 
 test("duplicate request does not repeat provider work and creation leaves draft unchanged", async () => {
   let calls = 0;
+  let saved: unknown = null;
   const counting = { review: async () => { calls += 1; return client.review(); } };
-  const result = await createDraftReviewForUser(ownerId, signalId, variationId.toString(), reviewInput, counting, repository());
+  const resultRepository = repository({
+    create: async (input) => {
+      const created = await repository().create(input);
+      saved = created;
+      return created;
+    },
+    findRequest: async () => saved as never,
+  });
+  const result = await createDraftReviewForUser(ownerId, signalId, variationId.toString(), reviewInput, counting, resultRepository);
+  await createDraftReviewForUser(ownerId, signalId, variationId.toString(), reviewInput, counting, resultRepository);
   assert.equal(calls, 1);
   assert.equal(generation.variations[0].status, "approved");
   assert.notEqual(result.proposedDraft, null);
+});
+
+test("uncertain identical review does not replay provider work", async () => {
+  let calls = 0;
+  const fingerprint = createHash("sha256").update(JSON.stringify({ variationId: variationId.toString(), briefId: briefId.toString(), draft: content, briefUpdatedAt: brief.updatedAt })).digest("hex");
+  const uncertain = { ...(await repository().findReview(ownerId, "review-id")), status: "uncertain", inputFingerprint: fingerprint };
+  const counting = { review: async () => { calls += 1; return client.review(); } };
+  await createDraftReviewForUser(
+    ownerId,
+    signalId,
+    variationId.toString(),
+    reviewInput,
+    counting,
+    repository({ findRequest: async () => uncertain as never }),
+  );
+  assert.equal(calls, 0);
 });
 
 test("apply uses expected content and returns a conflict after the draft changes", async () => {

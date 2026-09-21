@@ -1,6 +1,6 @@
 import type { Request, Response } from "express";
 import { AppError } from "../errors/app-error.js";
-import { approveContentWorkflowForUser, cancelContentWorkflowForUser, getContentWorkflowForUser, listContentWorkflowsForUser, startContentWorkflowForUser } from "../services/content-workflow.service.js";
+import { approveContentWorkflowForUser, cancelContentWorkflowForUser, createContentWorkflowReviewForUser, getContentWorkflowForUser, listContentWorkflowsForUser, startContentWorkflowForUser } from "../services/content-workflow.service.js";
 
 function owner(request: Request) {
   const value = request.auth?.userId;
@@ -18,6 +18,10 @@ export async function listContentWorkflows(request: Request, response: Response)
 export async function getContentWorkflow(request: Request, response: Response): Promise<void> {
   const workflow = await getContentWorkflowForUser(owner(request), response.locals.signalId, response.locals.workflowId);
   response.status(200).json({ success: true, data: { workflow } });
+}
+export async function createContentWorkflowReview(request: Request, response: Response): Promise<void> {
+  const workflow = await createContentWorkflowReviewForUser(owner(request), response.locals.signalId, response.locals.workflowId, request.body);
+  response.status(202).json({ success: true, data: { workflow } });
 }
 export async function cancelContentWorkflow(request: Request, response: Response): Promise<void> {
   const workflow = await cancelContentWorkflowForUser(owner(request), response.locals.signalId, response.locals.workflowId);

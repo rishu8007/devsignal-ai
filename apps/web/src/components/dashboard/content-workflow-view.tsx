@@ -6,12 +6,19 @@ import {
   cancelContentWorkflow,
   getContentWorkflow,
   listContentWorkflows,
+  reviewContentWorkflowVariation,
   startContentWorkflow,
   type ContentWorkflow,
 } from "@/lib/api/content-workflow-client";
 
 type Variation = { id?: string; angle?: string; content?: string };
 type Finding = { category?: string; severity?: string; passage?: string; explanation?: string; suggestion?: string };
+
+function firstReviewedVariationId(workflow: ContentWorkflow) {
+  const output = workflow.generationOutput;
+  const variations = output && typeof output === "object" ? (output as { variations?: Variation[] }).variations ?? [] : [];
+  return variations.find((variation) => workflow.reviewBindings.some((binding) => binding.variationId === variation.id && !binding.stale && binding.status === "succeeded"))?.id ?? null;
+}
 
 export function ContentWorkflowView({ signalId }: { signalId: string }) {
   const [sources, setSources] = useState<PublicKnowledgeSource[]>([]);
@@ -20,6 +27,7 @@ export function ContentWorkflowView({ signalId }: { signalId: string }) {
   const [history, setHistory] = useState<ContentWorkflow[]>([]);
   const [selectedVariationId, setSelectedVariationId] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const [reviewPendingId, setReviewPendingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -28,6 +36,7 @@ export function ContentWorkflowView({ signalId }: { signalId: string }) {
         setSources(sourcePage.sources.filter((source) => source.processingStatus === "indexed"));
         setHistory(runs);
         setWorkflow(runs[0] ?? null);
+        if (runs[0]) setSelectedVariationId(firstReviewedVariationId(runs[0]));
       })
       .catch(() => setError("Unable to load workflow inputs."));
   }, [signalId]);
@@ -73,10 +82,24 @@ export function ContentWorkflowView({ signalId }: { signalId: string }) {
     }
   };
 
+  const reviewVariation = async (variationId: string) => {
+    if (!workflow) return;
+    setReviewPendingId(variationId);
+    setError(null);
+    try {
+      setWorkflow(await reviewContentWorkflowVariation(signalId, workflow.id, variationId));
+      setSelectedVariationId(variationId);
+    } catch (value: unknown) {
+      setError(value instanceof ApiClientError ? value.message : "Review failed; your draft was not changed.");
+    } finally {
+      setReviewPendingId(null);
+    }
+  };
+
   const output = workflow?.generationOutput;
   const variations = output && typeof output === "object" ? (output as { variations?: Variation[] }).variations ?? [] : [];
-  const review = workflow?.reviewOutput;
-  const findings = review && typeof review === "object" ? (review as { findings?: Finding[] }).findings ?? [] : [];
+  const selectedBinding = workflow?.reviewBindings.find((binding) => binding.variationId === selectedVariationId && !binding.stale && binding.status === "succeeded");
+  const findings = (selectedBinding?.findings ?? []) as Finding[];
 
   return (
     <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 text-left">
@@ -90,7 +113,7 @@ export function ContentWorkflowView({ signalId }: { signalId: string }) {
         <button type="button" onClick={() => void start()} disabled={pending || selected.length === 0} className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{pending ? "Starting..." : "Start workflow"}</button>
         {workflow && ["queued", "running", "awaiting_approval"].includes(workflow.status) && <button type="button" onClick={() => { setPending(true); void cancelContentWorkflow(signalId, workflow.id).then(setWorkflow).finally(() => setPending(false)); }} disabled={pending} className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700">Cancel</button>}
       </div>
-      {workflow?.status === "awaiting_approval" && <div className="mt-4 space-y-2"><p className="text-sm font-semibold text-slate-800">Choose the exact draft version to approve</p>{variations.map((variation) => { const reviewable = variation.angle === "technical_depth"; return <label key={variation.id} className={`block rounded-lg border p-3 text-sm ${reviewable ? "border-slate-200" : "border-slate-100 opacity-60"}`}><input type="radio" name="workflow-variation" disabled={!reviewable} checked={selectedVariationId === variation.id} onChange={() => setSelectedVariationId(variation.id ?? null)} />{" "}<span className="font-semibold">{variation.angle ?? "Draft"}</span>{reviewable ? <span className="ml-2 text-xs text-emerald-700">Current technical review</span> : <span className="ml-2 text-xs text-slate-500">Review required before approval</span>}<p className="mt-1 whitespace-pre-wrap text-slate-600">{variation.content}</p></label>; })}<button type="button" onClick={() => void approve()} disabled={pending || !selectedVariationId} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">Approve selected draft</button></div>}
+      {workflow?.status === "awaiting_approval" && <div className="mt-4 space-y-2"><p className="text-sm font-semibold text-slate-800">Select a draft and review it before approval</p>{variations.map((variation) => { const binding = workflow.reviewBindings.find((item) => item.variationId === variation.id); const currentReview = binding && !binding.stale && binding.status === "succeeded"; return <div key={variation.id} className="rounded-lg border border-slate-200 p-3 text-sm"><label className="block"><input type="radio" name="workflow-variation" checked={selectedVariationId === variation.id} onChange={() => setSelectedVariationId(variation.id ?? null)} />{" "}<span className="font-semibold">{variation.angle ?? "Draft"}</span>{currentReview ? <span className="ml-2 text-xs text-emerald-700">Current review</span> : <span className="ml-2 text-xs text-amber-700">Review required</span>}<p className="mt-1 whitespace-pre-wrap text-slate-600">{variation.content}</p></label>{!currentReview && variation.id && <button type="button" onClick={() => void reviewVariation(variation.id!)} disabled={reviewPendingId !== null} className="mt-2 rounded-lg border border-indigo-300 px-3 py-1 text-xs font-semibold text-indigo-700">{reviewPendingId === variation.id ? "Reviewing..." : "Review this variation"}</button>}</div>; })}<button type="button" onClick={() => void approve()} disabled={pending || !selectedVariationId || !selectedBinding} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">Approve selected draft</button></div>}
       {findings.length > 0 && <div className="mt-4 space-y-2"><h3 className="font-semibold text-slate-800">Technical review findings</h3>{findings.map((finding, index) => <details key={`${finding.passage}-${index}`} className="rounded-lg border border-slate-200 p-3 text-sm"><summary className="cursor-pointer font-semibold">{finding.severity ?? "Review"}: {finding.category ?? "Finding"}</summary><p className="mt-2 text-slate-700">{finding.explanation}</p>{finding.passage && <p className="mt-2 border-l-2 border-indigo-300 pl-2 text-slate-600">“{finding.passage}”</p>}{finding.suggestion && <p className="mt-2 text-slate-600">Suggested: {finding.suggestion}</p>}</details>)}</div>}
       {workflow?.status === "awaiting_research" && <p className="mt-4 text-sm text-amber-700">No reliable evidence was found in the selected sources. Add or index more Knowledge before starting another workflow.</p>}
       {history.length > 1 && <p className="mt-4 text-xs text-slate-500">Saved workflow runs: {history.length}</p>}

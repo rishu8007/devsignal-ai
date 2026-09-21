@@ -179,6 +179,30 @@ Invoke-RestMethod http://127.0.0.1:8000/api/v1/health
 Invoke-WebRequest http://127.0.0.1:3000/ -UseBasicParsing
 ```
 
+## Knowledge-grounded topic planning
+
+The **Topics** workspace lets an authenticated user select one to five
+currently indexed Knowledge sources, optionally provide an audience and goal,
+and explicitly generate three to five structured topic ideas. Only the
+selected source text is sent to the AI service; profile fields and unrelated
+Knowledge are not implicitly included. Each suggestion shows its supporting
+source IDs and missing evidence. Editing the Signal topic and learning notes
+shows the exact Signal fields that will be saved; edited notes remain separate
+from the original AI evidence references. Choosing **Create Signal** creates
+only the Signal: it does not generate drafts, approve content, index sources,
+or schedule publication.
+
+Plans are owner-scoped, persisted, paginated in Recent plans, and
+request-idempotent. Source ownership, indexed status, and content versions
+are checked before planning and again before conversion; changed evidence
+requires a fresh plan. AI source references are validated against the
+selected evidence. The planner uses bounded inputs and does not perform
+external research. Database-enforced unique planning provenance prevents
+duplicate conversions; live MongoDB concurrency checks remain deferred and
+standalone MongoDB does not provide replica-set transactions. Running plans
+that become older than ten minutes are shown as uncertain and are never
+automatically retried.
+
 After source changes, rebuild the affected image. Rebuild the web image after
 code or any `NEXT_PUBLIC_*` value changes; recreate API or AI containers after
 server-side environment changes:
@@ -424,6 +448,74 @@ retained. The earlier `backups\20260917T1638Z-2` backup remains retained but
 must not be used because it was created before the binary archive fix and is
 corrupt. No live restore was performed against a hosted deployment.
 
+## GitHub documentation imports
+
+Knowledge supports importing one reviewed Markdown or text file from a public
+`https://github.com/owner/repository` repository. The optional branch defaults
+to the repository's default branch. The API resolves that branch to a commit,
+lists the repository tree through GitHub's REST API, excludes hidden,
+dependency/build, symlink, submodule, and unsupported files, and pins the
+preview and file read to that commit. Repository listings marked truncated,
+invalid UTF-8, empty files, and files over the 20,000-character source limit
+are rejected or shown as skipped; content is never silently truncated.
+
+The browser requires the user to preview and read a selected file before
+saving it as a note. Saving does not index the note. Imported sources retain
+their repository URL, branch, file path, commit SHA, blob SHA, and content
+hash. The source detail view can check for upstream changes and shows current
+and incoming content before an explicit refresh. Local edits require a
+separate acknowledgment, stale content versions and active indexing leases
+are rejected, and a disappeared upstream file leaves the local note intact.
+Preview tokens expire after ten minutes and GitHub requests use fixed
+`api.github.com` endpoints, bounded responses, no redirects, timeouts, and
+authenticated rate limiting. Private repositories and OAuth credentials are
+not supported.
+
+Manual check: sign in, open **Knowledge → Import from GitHub**, enter a public
+repository URL, preview the files, select a Markdown/text file, review it,
+and save it. Confirm the new note is pending, use **Check for upstream
+changes** from its provenance panel, and use the existing **Index source**
+action only when you explicitly want to incur embedding-provider usage.
+
+## Professional profile
+
+The authenticated **Profile** workspace stores a user-owned professional
+headline, summary, skills, target roles, audience, resume text, and up to 20
+project entries. Profile saves use an expected revision and reject stale
+updates; the first save is an atomic owner-scoped upsert. Empty optional
+fields are valid. Profile persistence never calls AI or indexes content.
+
+Users can preview the exact title and content for a profile summary, resume,
+or individual project and explicitly save that selection as a Knowledge note.
+The export stores profile identity, section, profile revision, and a content
+hash as provenance. Repeated unchanged exports are idempotent. Later profile
+changes require a new preview and explicit note update; local note edits
+require acknowledgment, and changed notes become pending for explicit
+reindexing. Saving a profile or knowledge note is separate from **Index
+source**.
+
+TXT/Markdown files and selectable-text PDFs can be reviewed before replacing
+resume text. Unsupported files, invalid UTF-8, blank extraction, oversized
+content, encrypted/scanned PDFs, and OCR cases are rejected; file selection
+never saves automatically. Canceling an import leaves the current profile
+input unchanged.
+
+### Development checklist
+
+The following GitHub-import cases remain unverified and are intentionally not
+expanded by the profile milestone:
+
+- Concurrent import idempotency.
+- Refresh/version conflicts and indexing leases.
+- Expired previews.
+- Explicit save/cancel UI behavior.
+
+Topic-planning verification in this checkpoint covers mocked ownership,
+indexed-version, fabricated-reference, request-key, stale-source,
+duplicate-conversion, independent-suggestion, and no-automatic-generation
+paths. Live MongoDB concurrency checks and browser-level reopening tests
+remain deferred; mocked tests do not prove database race behavior.
+
 ## Environment configuration
 
 Create files only from the tracked examples. The required values are:
@@ -532,9 +624,9 @@ screenshots, and traces.
 
 The implemented Personal RAG workflow is deliberately narrow: text notes,
 explicit indexing, owner-scoped retrieval, opt-in context for new
-Generations, and supporting-source inspection are available. File uploads,
-GitHub ingestion, autonomous agents, automatic publishing, and publishing
-automation are future work, not part of this demo.
+Generations, supporting-source inspection, public GitHub imports, and
+professional profile exports are available. Autonomous agents, automatic
+publishing, and publishing automation are future work, not part of this demo.
 
 See [services/api/README.md](services/api/README.md) and
 [services/ai/README.md](services/ai/README.md) for service-specific details,

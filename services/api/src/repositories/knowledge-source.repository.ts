@@ -21,6 +21,31 @@ export function createKnowledgeSource(
   });
 }
 
+export function createGithubKnowledgeSource(
+  ownerId: string,
+  input: CreateKnowledgeSourceInput & {
+    github: NonNullable<KnowledgeSourceDocument["github"]>;
+  },
+): Promise<KnowledgeSourceDocument> {
+  return KnowledgeSourceModel.create({
+    ownerId,
+    ...input,
+    contentVersion: 1,
+    processingStatus: "pending",
+  });
+}
+
+export function findGithubKnowledgeSource(
+  ownerId: string,
+  repositoryUrl: string,
+  path: string,
+): Promise<KnowledgeSourceDocument | null> {
+  return KnowledgeSourceModel.findOne({ ownerId, "github.repositoryUrl": repositoryUrl, "github.path": path })
+    .select("_id title content contentVersion processingStatus createdAt updatedAt +github")
+    .lean<KnowledgeSourceDocument>()
+    .exec();
+}
+
 export function findKnowledgeSourcesByOwner(
   ownerId: string,
   query: ListKnowledgeSourcesQuery,
@@ -54,7 +79,7 @@ export function findKnowledgeSourceByIdAndOwner(
   sourceId: string,
 ): Promise<KnowledgeSourceDocument | null> {
   return KnowledgeSourceModel.findOne({ _id: sourceId, ownerId })
-    .select("_id title content contentVersion processingStatus createdAt updatedAt")
+    .select("_id title content contentVersion processingStatus createdAt updatedAt +github")
     .lean<KnowledgeSourceDocument>()
     .exec();
 }
@@ -123,6 +148,43 @@ export function updateKnowledgeSourceIfVersionAndLeaseAvailable(
     .exec();
 }
 
+export function updateGithubKnowledgeSourceIfVersionAndLeaseAvailable(
+  ownerId: string,
+  sourceId: string,
+  input: UpdateKnowledgeSourceInput & { github: NonNullable<KnowledgeSourceDocument["github"]> },
+  now: Date,
+): Promise<KnowledgeSourceDocument | null> {
+  return KnowledgeSourceModel.findOneAndUpdate(
+    {
+      _id: sourceId,
+      ownerId,
+      contentVersion: input.expectedContentVersion,
+      $or: [{ indexingLeaseExpiresAt: null }, { indexingLeaseExpiresAt: { $lte: now } }],
+    },
+    {
+      $set: {
+        title: input.title,
+        content: input.content,
+        github: input.github,
+        contentVersion: input.expectedContentVersion + 1,
+        processingStatus: "pending",
+        processingErrorCode: null,
+        indexingAttemptId: null,
+        indexingLeaseExpiresAt: null,
+        indexedContentVersion: null,
+        indexedChunkerVersion: null,
+        indexedEmbeddingModel: null,
+        indexedDimensions: null,
+        indexedChunkCount: null,
+      },
+    },
+    { new: true },
+  )
+    .select("_id title content contentVersion processingStatus createdAt updatedAt +github")
+    .lean<KnowledgeSourceDocument>()
+    .exec();
+}
+
 export function findKnowledgeSourcesByIdsAndOwner(
   ownerId: string,
   sourceIds: string[],
@@ -160,7 +222,7 @@ export function findKnowledgeSourceForIndexing(
 ): Promise<KnowledgeSourceDocument | null> {
   return KnowledgeSourceModel.findOne({ _id: sourceId, ownerId })
     .select(
-      "+indexingAttemptId +indexingLeaseExpiresAt +indexedContentVersion " +
+      "title content +github +indexingAttemptId +indexingLeaseExpiresAt +indexedContentVersion " +
         "+indexedChunkerVersion +indexedEmbeddingModel +indexedDimensions +indexedChunkCount",
     )
     .lean<KnowledgeSourceDocument>()

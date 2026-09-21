@@ -32,6 +32,8 @@ import { DraftsView } from "@/components/dashboard/drafts-view";
 import { listCalendar, type CalendarResponse, type PublicCalendarItem } from "@/lib/api/calendar-client";
 import { CalendarView } from "@/components/dashboard/calendar-view";
 import { KnowledgeSourcesView } from "@/components/dashboard/knowledge-sources-view";
+import { ProfileView } from "@/components/dashboard/profile-view";
+import { TopicPlannerView } from "@/components/dashboard/topic-planner-view";
 
 export function DashboardWorkspace() {
   const { invalidateSession, status: authStatus } = useAuth();
@@ -68,6 +70,8 @@ export function DashboardWorkspace() {
   const [calendarError, setCalendarError] = useState<string | null>(null);
   const [knowledgeDirty, setKnowledgeDirty] = useState(false);
   const [knowledgeMutationPending, setKnowledgeMutationPending] = useState(false);
+  const [profileDirty, setProfileDirty] = useState(false);
+  const [profileMutationPending, setProfileMutationPending] = useState(false);
   const requestId = useRef(0);
   const listController = useRef<AbortController | null>(null);
   const generationRequestId = useRef(0);
@@ -652,8 +656,16 @@ export function DashboardWorkspace() {
     ) {
       return;
     }
+    if (
+      activeTab === "profile" &&
+      tab !== "profile" &&
+      profileDirty &&
+      !window.confirm("You have unsaved profile changes. Leave this tab? Your input will be preserved.")
+    ) {
+      return;
+    }
     setActiveTab(tab);
-  }, [activeTab, knowledgeDirty, signalDirty]);
+  }, [activeTab, knowledgeDirty, profileDirty, signalDirty]);
 
   return (
     <>
@@ -665,7 +677,7 @@ export function DashboardWorkspace() {
       <WorkspaceNavigation
         activeTab={activeTab}
         onChange={handleWorkspaceTabChange}
-        disabled={mutationPending || editingVariationId !== null || knowledgeMutationPending || signalEditPending}
+        disabled={mutationPending || editingVariationId !== null || knowledgeMutationPending || profileMutationPending || signalEditPending}
       />
       {activeTab === "create" && (
         <>
@@ -790,6 +802,13 @@ export function DashboardWorkspace() {
         onDirtyChange={setKnowledgeDirty}
         onMutationPendingChange={setKnowledgeMutationPending}
       />
+      <ProfileView
+        active={activeTab === "profile"}
+        onAuthenticationExpired={invalidateSession}
+        onDirtyChange={setProfileDirty}
+        onMutationPendingChange={setProfileMutationPending}
+      />
+      <TopicPlannerView active={activeTab === "planner"} />
     </>
   );
 }

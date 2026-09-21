@@ -24,6 +24,20 @@ import {
 } from "../validation/knowledge-source.validation.js";
 import { searchKnowledgeSources } from "../controllers/knowledge-source-retrieval.controller.js";
 import { knowledgeSourceSearchSchema } from "../validation/retrieval.validation.js";
+import { githubImportRateLimitMiddleware } from "../middleware/github-import-rate-limit.middleware.js";
+import {
+  checkGithub,
+  importGithub,
+  previewGithub,
+  readGithubFile,
+  refreshGithub,
+} from "../controllers/github-import.controller.js";
+import {
+  githubFileSchema,
+  githubImportSchema,
+  githubPreviewSchema,
+  githubRefreshSchema,
+} from "../validation/github-import.validation.js";
 
 export const knowledgeSourceRouter = Router();
 
@@ -37,6 +51,9 @@ const validateSourceParams = validateParams(
 knowledgeSourceRouter.use(authenticationMiddleware);
 knowledgeSourceRouter.post("/", validateRequest(createKnowledgeSourceSchema), createKnowledgeSource);
 knowledgeSourceRouter.post("/search", validateRequest(knowledgeSourceSearchSchema), searchKnowledgeSources);
+knowledgeSourceRouter.post("/github/preview", githubImportRateLimitMiddleware, validateRequest(githubPreviewSchema), previewGithub);
+knowledgeSourceRouter.post("/github/file", githubImportRateLimitMiddleware, validateRequest(githubFileSchema), readGithubFile);
+knowledgeSourceRouter.post("/github/import", githubImportRateLimitMiddleware, validateRequest(githubImportSchema), importGithub);
 knowledgeSourceRouter.get(
   "/",
   validateQuery(listKnowledgeSourcesQuerySchema, (locals, query: ListKnowledgeSourcesQuery) => {
@@ -52,4 +69,6 @@ knowledgeSourceRouter.patch(
   updateKnowledgeSource,
 );
 knowledgeSourceRouter.post("/:sourceId/index", validateSourceParams, validateRequest(z.object({}).strict()), indexKnowledgeSource);
+knowledgeSourceRouter.post("/:sourceId/github/check", githubImportRateLimitMiddleware, validateSourceParams, checkGithub);
+knowledgeSourceRouter.post("/:sourceId/github/refresh", githubImportRateLimitMiddleware, validateSourceParams, validateRequest(githubRefreshSchema), refreshGithub);
 knowledgeSourceRouter.delete("/:sourceId", validateSourceParams, deleteKnowledgeSource);

@@ -52,7 +52,7 @@ export interface SignalListResult {
   };
 }
 
-function toPublicSignalDto(signal: SignalDocument): PublicSignalDto {
+export function toPublicSignalDto(signal: SignalDocument): PublicSignalDto {
   return {
     id: signal._id.toString(),
     topic: signal.topic,

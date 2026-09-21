@@ -15,6 +15,7 @@ from app.config import get_settings
 from app.errors import ApplicationError
 from app.providers.embedding_provider import EmbeddingsAPI, OpenAIEmbeddingProvider
 from app.providers.openai_provider import OpenAIProvider, ResponsesAPI
+from app.providers.topic_planning_provider import TopicPlanningProvider, TopicResponses
 from app.repositories.qdrant_repository import QdrantAPI, QdrantVectorRepository
 from app.services.retrieval import RetrievalService
 from app.services.source_indexing import EmbeddingConfiguration, SourceIndexingService
@@ -47,6 +48,9 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
         cast(ResponsesAPI, client.responses),
         client.close,
         settings.openai_model,
+    )
+    application.state.topic_planning_provider = TopicPlanningProvider(
+        cast(TopicResponses, client.responses), client.close, settings.openai_model
     )
     application.state.embedding_provider = OpenAIEmbeddingProvider(
         cast(EmbeddingsAPI, client.embeddings),

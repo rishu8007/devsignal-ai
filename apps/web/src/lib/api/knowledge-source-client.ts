@@ -13,6 +13,32 @@ export interface PublicKnowledgeSource {
   processingStatus: KnowledgeSourceProcessingStatus;
   createdAt: string;
   updatedAt: string;
+  github?: {
+    repositoryUrl: string;
+    branch: string;
+    path: string;
+    commitSha: string;
+    blobSha: string;
+    importedContentHash: string;
+  };
+}
+
+export interface GithubPreview {
+  previewToken: string;
+  repositoryUrl: string;
+  branch: string;
+  commitSha: string;
+  files: Array<{ path: string; size: number }>;
+  skipped: Array<{ path: string; reason: string }>;
+}
+
+export interface GithubPreviewFile {
+  path: string;
+  content: string;
+  blobSha: string;
+  commitSha: string;
+  branch: string;
+  repositoryUrl: string;
 }
 
 export interface KnowledgeSourceListResponse {
@@ -88,6 +114,19 @@ function isPublicKnowledgeSource(value: unknown): value is PublicKnowledgeSource
     typeof value.createdAt === "string" &&
     typeof value.updatedAt === "string"
   );
+}
+
+function isGithubPreview(value: unknown): value is GithubPreview {
+  return isRecord(value) && typeof value.previewToken === "string" && typeof value.repositoryUrl === "string" &&
+    typeof value.branch === "string" && typeof value.commitSha === "string" && Array.isArray(value.files) &&
+    value.files.every((item) => isRecord(item) && typeof item.path === "string" && typeof item.size === "number") &&
+    Array.isArray(value.skipped) && value.skipped.every((item) => isRecord(item) && typeof item.path === "string" && typeof item.reason === "string");
+}
+
+function isGithubPreviewFile(value: unknown): value is GithubPreviewFile {
+  return isRecord(value) && typeof value.path === "string" && typeof value.content === "string" &&
+    typeof value.blobSha === "string" && typeof value.commitSha === "string" &&
+    typeof value.branch === "string" && typeof value.repositoryUrl === "string";
 }
 
 function isKnowledgeSourceResponse(value: unknown): value is KnowledgeSourceEnvelope {
@@ -183,6 +222,63 @@ export function createKnowledgeSource(payload: {
     { method: "POST", body: JSON.stringify(payload) },
     isKnowledgeSourceResponse,
   ).then((response) => response.data.source);
+}
+
+export function previewGithubRepository(repositoryUrl: string, branch?: string, signal?: AbortSignal): Promise<GithubPreview> {
+  return request("/sources/github/preview", {
+    method: "POST",
+    body: JSON.stringify(branch ? { repositoryUrl, branch } : { repositoryUrl }),
+    signal,
+  }, (value): value is { success: true; data: GithubPreview } =>
+    isRecord(value) && value.success === true && isRecord(value.data) && isGithubPreview(value.data),
+  ).then((response) => response.data);
+}
+
+export function readGithubPreviewFile(previewToken: string, path: string, signal?: AbortSignal): Promise<GithubPreviewFile> {
+  return request("/sources/github/file", {
+    method: "POST",
+    body: JSON.stringify({ previewToken, path }),
+    signal,
+  }, (value): value is { success: true; data: GithubPreviewFile } =>
+    isRecord(value) && value.success === true && isRecord(value.data) && isGithubPreviewFile(value.data),
+  ).then((response) => response.data);
+}
+
+export function importGithubFile(previewToken: string, path: string, title: string): Promise<PublicKnowledgeSource> {
+  return request("/sources/github/import", {
+    method: "POST",
+    body: JSON.stringify({ previewToken, path, title }),
+  }, isKnowledgeSourceResponse).then((response) => response.data.source);
+}
+
+export interface GithubRefreshCheck {
+  source: PublicKnowledgeSource;
+  changed: boolean;
+  disappeared: boolean;
+  incoming?: { content: string; commitSha: string; blobSha: string; branch: string; repositoryUrl: string; path: string };
+}
+
+function isGithubRefreshCheck(value: unknown): value is { success: true; data: GithubRefreshCheck } {
+  const incoming = isRecord(value) && isRecord(value.data) ? value.data.incoming : undefined;
+  return isRecord(value) && value.success === true && isRecord(value.data) &&
+    isPublicKnowledgeSource(value.data.source) && typeof value.data.changed === "boolean" &&
+    typeof value.data.disappeared === "boolean" &&
+    (incoming === undefined || (isRecord(incoming) && typeof incoming.content === "string" &&
+      typeof incoming.commitSha === "string" && typeof incoming.blobSha === "string" &&
+      typeof incoming.branch === "string" && typeof incoming.repositoryUrl === "string" &&
+      typeof incoming.path === "string"));
+}
+
+export function checkGithubRefresh(sourceId: string): Promise<GithubRefreshCheck> {
+  return request(`/sources/${encodeURIComponent(sourceId)}/github/check`, { method: "POST", body: JSON.stringify({}) }, isGithubRefreshCheck)
+    .then((response) => response.data);
+}
+
+export function refreshGithubSource(sourceId: string, expectedContentVersion: number, acknowledgeLocalEdits: boolean): Promise<PublicKnowledgeSource> {
+  return request(`/sources/${encodeURIComponent(sourceId)}/github/refresh`, {
+    method: "POST",
+    body: JSON.stringify({ expectedContentVersion, acknowledgeLocalEdits }),
+  }, isKnowledgeSourceResponse).then((response) => response.data.source);
 }
 
 export function listKnowledgeSources({

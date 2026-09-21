@@ -27,6 +27,21 @@ export interface PublicKnowledgeSourceDto {
   processingStatus: KnowledgeSourceDocument["processingStatus"];
   createdAt: Date;
   updatedAt: Date;
+  github?: {
+    repositoryUrl: string;
+    branch: string;
+    path: string;
+    commitSha: string;
+    blobSha: string;
+    importedContentHash: string;
+  };
+  profile?: {
+    profileId: string;
+    section: "summary" | "resume" | "project";
+    projectId?: string;
+    profileRevision: number;
+    contentHash?: string;
+  };
 }
 
 export interface KnowledgeSourceListResult {
@@ -75,7 +90,7 @@ function sourceNotFound(): AppError {
   return new AppError(404, "SOURCE_NOT_FOUND", "Knowledge source not found");
 }
 
-function toPublicKnowledgeSourceDto(
+export function toPublicKnowledgeSourceDto(
   source: KnowledgeSourceDocument,
 ): PublicKnowledgeSourceDto {
   return {
@@ -86,6 +101,38 @@ function toPublicKnowledgeSourceDto(
     processingStatus: source.processingStatus,
     createdAt: source.createdAt,
     updatedAt: source.updatedAt,
+    ...(source.github?.repositoryUrl &&
+    source.github.branch &&
+    source.github.path &&
+    source.github.commitSha &&
+    source.github.blobSha &&
+    source.github.importedContentHash
+      ? {
+          github: {
+            repositoryUrl: source.github.repositoryUrl,
+            branch: source.github.branch,
+            path: source.github.path,
+            commitSha: source.github.commitSha,
+            blobSha: source.github.blobSha,
+            importedContentHash: source.github.importedContentHash,
+          },
+        }
+      : {}),
+    ...(source.profile?.profileId &&
+    source.profile.section &&
+    source.profile.profileRevision
+      ? {
+          profile: {
+            profileId: source.profile.profileId.toString(),
+            section: source.profile.section,
+            ...(source.profile.projectId
+              ? { projectId: source.profile.projectId.toString() }
+              : {}),
+            profileRevision: source.profile.profileRevision,
+            ...(source.profile.contentHash ? { contentHash: source.profile.contentHash } : {}),
+          },
+        }
+      : {}),
   };
 }
 

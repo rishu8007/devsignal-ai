@@ -5,6 +5,8 @@ import type {
   KnowledgeSourceParams,
   ListKnowledgeSourcesQuery,
 } from "../validation/knowledge-source.validation.js";
+import type { z } from "zod";
+import type { topicPlansQuerySchema } from "../validation/topic-planning.validation.js";
 
 declare global {
   namespace Express {
@@ -22,6 +24,7 @@ declare global {
       calendarQuery: CalendarQuery;
       knowledgeSourceParams: KnowledgeSourceParams;
       knowledgeSourceQuery: ListKnowledgeSourcesQuery;
+      topicPlansQuery: z.infer<typeof topicPlansQuerySchema>;
     }
   }
 }

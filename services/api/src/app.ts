@@ -13,6 +13,8 @@ import { healthRouter } from "./routes/health.routes.js";
 import { knowledgeSourceRouter } from "./routes/knowledge-source.routes.js";
 import { signalRouter } from "./routes/signal.routes.js";
 import { sameOriginMiddleware } from "./middleware/same-origin.middleware.js";
+import { professionalProfileRouter } from "./routes/professional-profile.routes.js";
+import { topicPlanningRouter } from "./routes/topic-planning.routes.js";
 
 export const app = express();
 
@@ -35,6 +37,8 @@ app.use("/api/v1/auth", authRouter);
 app.use("/api/v1/drafts", draftRouter);
 app.use("/api/v1/calendar", calendarRouter);
 app.use("/api/v1/sources", knowledgeSourceRouter);
+app.use("/api/v1/profile", professionalProfileRouter);
+app.use("/api/v1/topic-plans", topicPlanningRouter);
 app.use("/api/v1/signals", signalRouter);
 app.use(notFoundMiddleware);
 app.use(errorMiddleware);

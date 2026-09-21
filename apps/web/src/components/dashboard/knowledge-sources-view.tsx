@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, FormEvent } from "react";
 import { PdfImportPanel } from "./pdf-import-panel";
 import { RepositoryZipImportPanel } from "./repository-zip-import-panel";
+import { GithubImportPanel } from "./github-import-panel";
 import { ApiClientError } from "@/lib/api/api-client";
 import {
   createKnowledgeSource,
@@ -14,6 +15,8 @@ import {
   KNOWLEDGE_SEARCH_QUERY_MAX_CODE_POINTS,
   searchKnowledgeSources,
   updateKnowledgeSource,
+  checkGithubRefresh,
+  refreshGithubSource,
   type KnowledgeSearchResponse,
   type KnowledgeSourceProcessingStatus,
   type KnowledgeSourceListResponse,
@@ -49,6 +52,7 @@ export function KnowledgeSourcesView({
   const [importError, setImportError] = useState<string | null>(null);
   const [zipImportOpen, setZipImportOpen] = useState(false);
   const [pdfImportOpen, setPdfImportOpen] = useState(false);
+  const [githubImportOpen, setGithubImportOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const [sourceList, setSourceList] = useState<KnowledgeSourceListResponse | null>(null);
   const [page, setPage] = useState(1);
@@ -76,6 +80,9 @@ export function KnowledgeSourcesView({
   const [editError, setEditError] = useState<string | null>(null);
   const [editConflict, setEditConflict] = useState(false);
   const [editUncertain, setEditUncertain] = useState(false);
+  const [githubRefresh, setGithubRefresh] = useState<Awaited<ReturnType<typeof checkGithubRefresh>> | null>(null);
+  const [githubRefreshLoading, setGithubRefreshLoading] = useState(false);
+  const [githubRefreshError, setGithubRefreshError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<KnowledgeSearchResponse | null>(null);
   const [searchLoading, setSearchLoading] = useState(false);
@@ -137,6 +144,35 @@ export function KnowledgeSourcesView({
     editingSource &&
     selectedSource !== null &&
     (editTitle.trim() !== selectedSource.title || editContent.trim() !== selectedSource.content);
+
+  const handleGithubRefreshCheck = async () => {
+    if (!selectedSource?.github || githubRefreshLoading) return;
+    setGithubRefreshLoading(true);
+    setGithubRefreshError(null);
+    try {
+      setGithubRefresh(await checkGithubRefresh(selectedSource.id));
+    } catch (error: unknown) {
+      setGithubRefreshError(error instanceof Error ? error.message : "Unable to check GitHub for changes.");
+    } finally {
+      setGithubRefreshLoading(false);
+    }
+  };
+
+  const handleGithubRefresh = async (acknowledgeLocalEdits: boolean) => {
+    if (!selectedSource || !githubRefresh?.incoming || githubRefreshLoading) return;
+    setGithubRefreshLoading(true);
+    setGithubRefreshError(null);
+    try {
+      const updated = await refreshGithubSource(selectedSource.id, selectedSource.contentVersion, acknowledgeLocalEdits);
+      setSelectedSource(updated);
+      setGithubRefresh(null);
+      setSuccessMessage("GitHub source refreshed. Index it explicitly before searching it.");
+    } catch (error: unknown) {
+      setGithubRefreshError(error instanceof Error ? error.message : "Unable to refresh the GitHub source.");
+    } finally {
+      setGithubRefreshLoading(false);
+    }
+  };
 
   useEffect(() => {
     mounted.current = true;
@@ -1083,6 +1119,19 @@ export function KnowledgeSourcesView({
               >
                 Import PDF
               </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setImportError(null);
+                  setZipImportOpen(false);
+                  setPdfImportOpen(false);
+                  setGithubImportOpen(true);
+                }}
+                disabled={creating || deleting || indexing || editPending || importLoading}
+                className="rounded-lg border border-indigo-300 bg-white px-3 py-2 text-sm font-semibold text-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Import from GitHub
+              </button>
             </div>
           </div>
           <p id="knowledge-source-file-help" className="mt-2 text-xs leading-5 text-slate-500">
@@ -1104,6 +1153,16 @@ export function KnowledgeSourcesView({
             formValues={{ title, content }}
             onImport={handlePdfImport}
             onClose={() => setPdfImportOpen(false)}
+          />
+          <GithubImportPanel
+            active={githubImportOpen && active}
+            disabled={creating || deleting || indexing || editPending}
+            onImported={() => {
+              setGithubImportOpen(false);
+              void loadSources(1, true);
+              setSuccessMessage("GitHub file imported. Index it explicitly when ready.");
+            }}
+            onClose={() => setGithubImportOpen(false)}
           />
           <div className="mt-4 space-y-4">
             <div>
@@ -1531,6 +1590,20 @@ export function KnowledgeSourcesView({
                 <p className="mt-4 text-xs text-slate-500">
                   Version {selectedSource.contentVersion} · Updated {formatDate(selectedSource.updatedAt)}
                 </p>
+                {selectedSource.github && <div className="mt-3 rounded-lg border border-indigo-100 bg-indigo-50 p-3 text-xs text-slate-700">
+                  <p>Imported from <a className="font-semibold text-indigo-700 underline" href={selectedSource.github.repositoryUrl} target="_blank" rel="noreferrer">{selectedSource.github.repositoryUrl}</a> at <code>{selectedSource.github.commitSha.slice(0, 12)}</code>.</p>
+                  <button type="button" onClick={() => void handleGithubRefreshCheck()} disabled={githubRefreshLoading || editingSource || deleting || indexing} className="mt-2 rounded border border-indigo-300 bg-white px-3 py-1.5 font-semibold text-indigo-700 disabled:opacity-50">{githubRefreshLoading ? "Checking..." : "Check for upstream changes"}</button>
+                  {githubRefresh?.disappeared && <p className="mt-2 text-amber-800">The upstream file disappeared. Your local note was retained.</p>}
+                  {githubRefresh?.changed && githubRefresh.incoming && <div className="mt-3 space-y-2">
+                    <p className="font-semibold">Incoming content from commit {githubRefresh.incoming.commitSha.slice(0, 12)}:</p>
+                    <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded bg-white p-2">{githubRefresh.incoming.content}</pre>
+                    <p>Current local content:</p>
+                    <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded bg-white p-2">{selectedSource.content}</pre>
+                    {githubRefreshError && <p className="text-red-700">{githubRefreshError}</p>}
+                    <button type="button" onClick={() => void handleGithubRefresh(true)} disabled={githubRefreshLoading} className="rounded bg-indigo-600 px-3 py-1.5 font-semibold text-white disabled:opacity-50">Acknowledge and replace with reviewed upstream content</button>
+                  </div>}
+                  {githubRefresh && !githubRefresh.changed && !githubRefresh.disappeared && <p className="mt-2 text-green-700">No upstream content changes found.</p>}
+                </div>}
                 {!editingSource && (
                 <div className="mt-4 flex flex-wrap gap-3">
                   {selectedSource.processingStatus === "pending" && !indexingConfirm && (

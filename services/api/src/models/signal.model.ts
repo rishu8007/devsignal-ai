@@ -40,6 +40,11 @@ const signalSchema = new Schema(
       required: true,
       enum: SIGNAL_CONTENT_TYPES,
     },
+    planning: {
+      runId: { type: Schema.Types.ObjectId, ref: "TopicPlanningRun" },
+      suggestionId: { type: String, maxlength: 100 },
+      sourceVersions: { type: [{ sourceId: String, contentVersion: Number }] },
+    },
     revision: {
       type: Number,
       required: true,
@@ -75,6 +80,10 @@ const signalSchema = new Schema(
 );
 
 signalSchema.index({ ownerId: 1, createdAt: -1, _id: -1 });
+signalSchema.index(
+  { ownerId: 1, "planning.runId": 1, "planning.suggestionId": 1 },
+  { unique: true, partialFilterExpression: { "planning.runId": { $exists: true } } },
+);
 
 export type SignalDocument = InferSchemaType<typeof signalSchema> & {
   _id: Types.ObjectId;

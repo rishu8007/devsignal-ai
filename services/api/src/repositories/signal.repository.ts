@@ -8,8 +8,13 @@ import type {
 export async function createSignal(
   ownerId: string,
   input: CreateSignalInput,
+  planning?: { runId: string; suggestionId: string; sourceVersions: Array<{ sourceId: string; contentVersion: number }> },
 ): Promise<SignalDocument> {
-  return SignalModel.create({ ownerId, ...input, revision: 1 });
+  return SignalModel.create({ ownerId, ...input, ...(planning ? { planning } : {}), revision: 1 });
+}
+
+export function findSignalByPlanning(ownerId: string, runId: string, suggestionId: string) {
+  return SignalModel.findOne({ ownerId, "planning.runId": runId, "planning.suggestionId": suggestionId }).lean<SignalDocument>().exec();
 }
 
 export async function findSignalsByOwner(

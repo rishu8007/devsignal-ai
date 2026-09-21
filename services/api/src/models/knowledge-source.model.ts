@@ -28,6 +28,21 @@ const knowledgeSourceSchema = new Schema(
       default: 1,
       min: 1,
     },
+    github: {
+      repositoryUrl: { type: String, maxlength: 2048 },
+      branch: { type: String, maxlength: 255 },
+      path: { type: String, maxlength: 1024 },
+      commitSha: { type: String, minlength: 40, maxlength: 40 },
+      blobSha: { type: String, maxlength: 255 },
+      importedContentHash: { type: String, minlength: 64, maxlength: 64 },
+    },
+    profile: {
+      profileId: { type: Schema.Types.ObjectId, ref: "ProfessionalProfile" },
+      section: { type: String, enum: ["summary", "resume", "project"] },
+      projectId: { type: Schema.Types.ObjectId },
+      profileRevision: { type: Number, min: 1 },
+      contentHash: { type: String, minlength: 64, maxlength: 64 },
+    },
     processingStatus: {
       type: String,
       required: true,
@@ -95,6 +110,21 @@ export type KnowledgeSourceDocument = InferSchemaType<typeof knowledgeSourceSche
   _id: Types.ObjectId;
   ownerId: Types.ObjectId;
   contentVersion: number;
+  github?: {
+    repositoryUrl?: string | null;
+    branch?: string | null;
+    path?: string | null;
+    commitSha?: string | null;
+    blobSha?: string | null;
+    importedContentHash?: string | null;
+  } | null;
+  profile?: {
+    profileId?: Types.ObjectId | string | null;
+    section?: "summary" | "resume" | "project" | null;
+    projectId?: Types.ObjectId | string | null;
+    profileRevision?: number | null;
+    contentHash?: string | null;
+  } | null;
   processingStatus: KnowledgeSourceProcessingStatus;
   processingErrorCode?: string | null;
   indexingAttemptId?: string | null;

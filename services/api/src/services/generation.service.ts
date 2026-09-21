@@ -484,7 +484,7 @@ async function requireUpdatedVariation(
   return toPublicGenerationDto(generation);
 }
 
-function normalizeAiGenerationResult(
+export function normalizeAiGenerationResult(
   result: AiGenerationResult,
   useKnowledge: boolean,
   candidatesByChunkId: Map<string, PublicRetrievalCandidate>,

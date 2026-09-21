@@ -8,6 +8,7 @@ from app.api.routes.research_briefs import router as research_briefs_router
 from app.api.routes.research_retrievals import router as research_retrievals_router
 from app.api.routes.retrievals import router as retrievals_router
 from app.api.routes.topic_plans import router as topic_plans_router
+from app.api.routes.workflows import router as workflows_router
 
 router = APIRouter(prefix="/api/v1")
 router.include_router(health_router)
@@ -18,3 +19,4 @@ router.include_router(topic_plans_router)
 router.include_router(research_briefs_router)
 router.include_router(research_retrievals_router)
 router.include_router(draft_reviews_router)
+router.include_router(workflows_router)

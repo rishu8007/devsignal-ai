@@ -15,12 +15,14 @@ import {
   signalParamsSchema,
 } from "../validation/signal.validation.js";
 import { researchBriefRouter, researchBriefDetailRouter } from "./research-brief.routes.js";
+import { contentWorkflowRouter } from "./content-workflow.routes.js";
 
 export const signalRouter = Router();
 
 signalRouter.use("/:signalId/generations", generationRouter);
 signalRouter.use("/:signalId/research", researchBriefRouter);
 signalRouter.use("/:signalId/research-briefs", researchBriefDetailRouter);
+signalRouter.use("/:signalId/workflows", contentWorkflowRouter);
 
 signalRouter.post(
   "/",

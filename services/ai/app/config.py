@@ -30,6 +30,8 @@ class Settings(BaseSettings):
     qdrant_timeout_seconds: int = Field(default=10, ge=1, le=120)
     internal_api_key: SecretStr = Field(default=SecretStr(""), min_length=32)
     openai_timeout_seconds: int = Field(default=45, ge=5, le=120)
+    workflow_checkpoint_uri: str | None = Field(default=None, min_length=1)
+    workflow_checkpoint_database: str = Field(default="devsignal_workflows", min_length=1)
 
     model_config = SettingsConfigDict(
         env_file=Path(__file__).resolve().parents[1] / ".env",
@@ -45,6 +47,11 @@ class Settings(BaseSettings):
         if not value.strip():
             raise ValueError("qdrant_collection_name must not be blank")
         return value
+
+    @field_validator("workflow_checkpoint_uri", mode="before")
+    @classmethod
+    def normalize_workflow_checkpoint_uri(cls, value: str | None) -> str | None:
+        return value.strip() or None if isinstance(value, str) else value
 
 
 @lru_cache(maxsize=1)

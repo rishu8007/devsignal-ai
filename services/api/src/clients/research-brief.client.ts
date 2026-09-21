@@ -15,7 +15,18 @@ const responseSchema = z.object({
     limitations: z.array(z.string()),
   }),
 });
-export type ResearchBriefEvidence = { evidenceId: string; sourceId: string; contentVersion: number; chunkId: string; chunkIndex: number; text: string; score: number };
+export type ResearchBriefEvidence = {
+  evidenceId: string;
+  sourceId: string;
+  title: string;
+  contentVersion: number;
+  chunkId: string;
+  chunkIndex: number;
+  text: string;
+  startOffset: number;
+  endOffset: number;
+  score: number;
+};
 export type ResearchBriefResult = z.infer<typeof responseSchema>["data"];
 export interface ResearchBriefClient { research(input: { topic: string; notes: string; evidence: ResearchBriefEvidence[] }): Promise<ResearchBriefResult>; }
 export class AiResearchBriefClient implements ResearchBriefClient {

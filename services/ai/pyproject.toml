@@ -12,6 +12,9 @@ dependencies = [
   "qdrant-client==1.19.0",
   "uvicorn[standard]",
   "pydantic-settings",
+  "langgraph==1.2.11",
+  "langgraph-checkpoint-mongodb==0.5.0",
+  "pymongo",
 ]
 
 [project.optional-dependencies]

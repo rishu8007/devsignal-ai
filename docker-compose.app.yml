@@ -18,11 +18,15 @@ services:
       QDRANT_TIMEOUT_SECONDS: ${QDRANT_TIMEOUT_SECONDS:-10}
       INTERNAL_API_KEY: ${AI_INTERNAL_API_KEY:?AI_INTERNAL_API_KEY is required}
       OPENAI_TIMEOUT_SECONDS: ${OPENAI_TIMEOUT_SECONDS:-45}
+      WORKFLOW_CHECKPOINT_URI: ${WORKFLOW_CHECKPOINT_URI:-}
+      WORKFLOW_CHECKPOINT_DATABASE: ${WORKFLOW_CHECKPOINT_DATABASE:-devsignal_workflow_checkpoints}
     ports:
       - "127.0.0.1:${AI_PORT:-8000}:8000"
     depends_on:
       qdrant:
         condition: service_started
+      mongo:
+        condition: service_healthy
 
   api:
     profiles: ["app"]

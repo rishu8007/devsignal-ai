@@ -5,8 +5,11 @@ import { env } from "./config/env.js";
 import { ensureGenerationIndexes } from "./repositories/generation.repository.js";
 import { ensureResearchBriefIndexes } from "./repositories/research-brief.repository.js";
 import { ensureDraftReviewIndexes } from "./repositories/draft-review.repository.js";
+import { ensureContentWorkflowIndexes } from "./repositories/content-workflow.repository.js";
+import { startContentWorkflowWorker } from "./services/content-workflow.service.js";
 
 let server: Server | undefined;
+let stopWorkflowWorker: (() => void) | undefined;
 let isShuttingDown = false;
 
 async function closeHttpServer(): Promise<void> {
@@ -35,6 +38,7 @@ async function shutdown(signal: string): Promise<void> {
   console.log(`Received ${signal}; shutting down gracefully.`);
 
   try {
+    stopWorkflowWorker?.();
     await closeHttpServer();
     await disconnectFromDatabase();
     process.exitCode = 0;
@@ -50,6 +54,7 @@ async function startServer(): Promise<void> {
     await ensureGenerationIndexes();
     await ensureResearchBriefIndexes();
     await ensureDraftReviewIndexes();
+    await ensureContentWorkflowIndexes();
   } catch {
     console.error("Database connection failed; the API server was not started.");
     process.exitCode = 1;
@@ -59,6 +64,7 @@ async function startServer(): Promise<void> {
   server = app.listen(env.PORT, () => {
     console.log(`DevSignal API listening on port ${env.PORT}`);
   });
+  stopWorkflowWorker = startContentWorkflowWorker();
 }
 
 process.once("SIGINT", () => {

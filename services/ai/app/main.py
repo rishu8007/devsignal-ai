@@ -2,12 +2,14 @@ import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from time import monotonic
-from typing import cast
+from typing import Any, cast
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from langgraph.checkpoint.mongodb import MongoDBSaver
 from openai import AsyncOpenAI
+from pymongo import MongoClient
 from qdrant_client import AsyncQdrantClient
 
 from app.api.router import router
@@ -21,6 +23,7 @@ from app.providers.topic_planning_provider import TopicPlanningProvider, TopicRe
 from app.repositories.qdrant_repository import QdrantAPI, QdrantVectorRepository
 from app.services.retrieval import RetrievalService
 from app.services.source_indexing import EmbeddingConfiguration, SourceIndexingService
+from app.workflow_graph import build_workflow_graph
 
 logger = logging.getLogger("devsignal-ai-service")
 
@@ -69,6 +72,26 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
         research_client.close,
         settings.openai_model,
     )
+    workflow_checkpoint_client: MongoClient[dict[str, Any]] | None = None
+    workflow_checkpointer: MongoDBSaver | None = None
+    if settings.workflow_checkpoint_uri:
+        workflow_checkpoint_client = MongoClient(settings.workflow_checkpoint_uri)
+        workflow_checkpointer = MongoDBSaver(
+            workflow_checkpoint_client,
+            db_name=settings.workflow_checkpoint_database,
+        )
+        application.state.workflow_graph = build_workflow_graph(
+            application.state.research_brief_provider,
+            OpenAIProvider(
+                cast(ResponsesAPI, research_client.responses),
+                research_client.close,
+                settings.openai_model,
+            ),
+            application.state.draft_review_provider,
+            workflow_checkpointer,
+        )
+    else:
+        application.state.workflow_graph = None
     application.state.embedding_provider = OpenAIEmbeddingProvider(
         cast(EmbeddingsAPI, client.embeddings),
         settings.openai_embedding_model,
@@ -123,6 +146,10 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
             try:
                 await research_client.close()
             finally:
+                if workflow_checkpointer is not None:
+                    workflow_checkpointer.close()
+                if workflow_checkpoint_client is not None:
+                    workflow_checkpoint_client.close()
                 await qdrant_client.close()
         logger.info("DevSignal AI service stopped")
 

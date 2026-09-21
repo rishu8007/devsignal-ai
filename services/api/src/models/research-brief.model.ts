@@ -3,10 +3,13 @@ import { model, Schema, type InferSchemaType, type Types } from "mongoose";
 const evidenceSchema = new Schema({
   evidenceId: { type: String, required: true, maxlength: 120 },
   sourceId: { type: Schema.Types.ObjectId, required: true },
+  title: { type: String, required: true, maxlength: 200 },
   contentVersion: { type: Number, required: true, min: 1 },
   chunkId: { type: String, required: true, maxlength: 200 },
   chunkIndex: { type: Number, required: true, min: 0 },
   text: { type: String, required: true, maxlength: 1000 },
+  startOffset: { type: Number, required: true, min: 0 },
+  endOffset: { type: Number, required: true, min: 1 },
   score: { type: Number, required: true },
   quote: { type: String, required: true, maxlength: 1000 },
 });

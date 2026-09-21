@@ -1,10 +1,10 @@
 import secrets
-from typing import cast
+from typing import Any, cast
 
 from fastapi import Header, Request
 
 from app.config import get_settings
-from app.errors import SERVICE_AUTHENTICATION_ERROR
+from app.errors import SERVICE_AUTHENTICATION_ERROR, ApplicationError
 from app.providers.draft_review_provider import DraftReviewProvider
 from app.providers.protocol import GenerationProvider
 from app.providers.research_brief_provider import ResearchBriefProvider
@@ -81,3 +81,20 @@ def require_internal_draft_review_provider(
     if not secrets.compare_digest(expected, provided):
         raise SERVICE_AUTHENTICATION_ERROR
     return cast(DraftReviewProvider, request.app.state.draft_review_provider)
+
+
+def require_internal_workflow_graph(
+    request: Request, x_internal_api_key: str | None = Header(default=None)
+) -> Any:
+    expected = get_settings().internal_api_key.get_secret_value().encode("utf-8")
+    provided = (x_internal_api_key or "").encode("utf-8")
+    if not secrets.compare_digest(expected, provided):
+        raise SERVICE_AUTHENTICATION_ERROR
+    graph = request.app.state.workflow_graph
+    if graph is None:
+        raise ApplicationError(
+            503,
+            "WORKFLOW_CHECKPOINT_UNAVAILABLE",
+            "Durable workflow checkpoints are not configured",
+        )
+    return graph

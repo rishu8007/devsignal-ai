@@ -36,6 +36,7 @@ import { ProfileView } from "@/components/dashboard/profile-view";
 import { TopicPlannerView } from "@/components/dashboard/topic-planner-view";
 import { ResearchBriefView } from "@/components/dashboard/research-brief-view";
 import { DraftReviewPanel } from "@/components/dashboard/draft-review-panel";
+import { ContentWorkflowView } from "@/components/dashboard/content-workflow-view";
 
 export function DashboardWorkspace() {
   const { invalidateSession, status: authStatus } = useAuth();
@@ -765,6 +766,7 @@ export function DashboardWorkspace() {
               }}
             />
           )}
+          {selectedSignal && <ContentWorkflowView signalId={selectedSignal.id} />}
         </>
       )}
       {activeTab === "drafts" && (

@@ -96,7 +96,7 @@ export async function createResearchBriefForUser(
   }
   const allowed = new Set(ids);
   const evidence = candidates.filter((candidate) => validateEvidence(candidate, sources, allowed)).slice(0, MAX_EVIDENCE).map((candidate, index) => ({
-    evidenceId: `e${index + 1}`, sourceId: candidate.sourceId, contentVersion: candidate.contentVersion, chunkId: candidate.chunkId, chunkIndex: candidate.chunkIndex, text: candidate.text, score: candidate.score, quote: candidate.text,
+    evidenceId: `e${index + 1}`, sourceId: candidate.sourceId, title: sources.find((source) => source._id.toString() === candidate.sourceId)?.title ?? "", contentVersion: candidate.contentVersion, chunkId: candidate.chunkId, chunkIndex: candidate.chunkIndex, text: candidate.text, startOffset: candidate.startOffset, endOffset: candidate.endOffset, score: candidate.score, quote: candidate.text,
   }));
   if (evidence.reduce((total, item) => total + item.text.length, 0) > MAX_TOTAL_CONTEXT) evidence.splice(Math.floor(MAX_TOTAL_CONTEXT / 1000));
   let result;

@@ -17,6 +17,48 @@ content. The current product includes:
 Nothing publishes automatically. Automatic publishing and notifications are
 future plans, not implemented features.
 
+## Signal content workflow
+
+The dashboard can start a bounded, persisted workflow from a saved Signal
+after the user explicitly selects current indexed Knowledge sources. The
+workflow reuses the existing research, generation, and technical-review
+services, then pauses at a durable LangGraph human-approval interrupt. The
+Express `ContentWorkflow` record is authoritative for user-visible status and
+links to the saved research brief, generation, and review; the LangGraph
+checkpoint stores execution and resume position using the persisted thread ID.
+Approval is explicit for one exact draft revision and completion does not
+publish or schedule anything.
+
+Workflow-generated drafts retain the same server-owned citation mapping as
+manual Knowledge-grounded generation. Model-returned evidence IDs are checked
+against the exact supplied evidence, then mapped to the current source title,
+content version, chunk identity, and offsets before persistence; fabricated
+references fail the workflow. The current bounded workflow reviews the
+technical-depth variation, so the dashboard marks the other variations as
+requiring their own review rather than allowing them to be approved.
+
+For local workflow execution, configure the AI service with a dedicated
+checkpoint MongoDB URI and database (`WORKFLOW_CHECKPOINT_URI` and
+`WORKFLOW_CHECKPOINT_DATABASE`). The API initializes workflow uniqueness
+indexes before listening and the AI service constructs the MongoDB checkpointer
+before serving workflow requests. Without checkpoint configuration, workflow
+requests are rejected rather than using non-durable in-memory state.
+
+The API worker claims queued runs with a lease and persists each step. Reloads
+and restarts reuse completed persisted outputs; an expired lease or uncertain
+provider outcome is surfaced as uncertain and is not automatically replayed.
+Cancellation prevents later steps, although an already-dispatched provider
+request may still finish and incur usage. This does not provide exactly-once
+provider execution: a crash between provider completion and persistence can
+remain uncertain. Live MongoDB concurrency rehearsals and browser regression
+checks remain deferred.
+
+The automated workflow tests use mocked providers and an in-memory LangGraph
+checkpointer, including rebuilding the graph executor before resume. They do
+not prove MongoDB checkpoint recovery or multi-worker races. The checkpoint
+database is separate from the application database when configured; backup
+coverage for that database must be extended before production rollout.
+
 ## Architecture
 
 | Area | Location | Responsibility |

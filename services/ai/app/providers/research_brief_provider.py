@@ -25,6 +25,7 @@ class ResearchBriefProvider:
         model: str,
     ) -> None:
         self.responses, self.close_client, self.model = responses, close_client, model
+
     async def research(self, request: ResearchBriefRequest) -> ResearchBriefData:
         try:
             result = await self.responses.parse(
@@ -52,5 +53,6 @@ class ResearchBriefProvider:
         if not isinstance(output, ResearchBriefData):
             raise ProviderError("invalid_response")
         return output
+
     async def close(self) -> None:
         await self.close_client()

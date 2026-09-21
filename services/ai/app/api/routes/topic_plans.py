@@ -5,6 +5,8 @@ from app.providers.topic_planning_provider import TopicPlanningProvider
 from app.schemas.topic_planning import TopicPlanRequest, TopicPlanResponse
 
 router = APIRouter()
+
+
 @router.post("/topic-plans", response_model=TopicPlanResponse)
 async def create_topic_plan(
     request: TopicPlanRequest,

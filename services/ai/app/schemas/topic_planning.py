@@ -10,11 +10,13 @@ class TopicSource(BaseModel):
     title: StrictStr = Field(min_length=1, max_length=200)
     text: StrictStr = Field(min_length=1, max_length=4000)
 
+
 class TopicPlanRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
     audience: str = Field(max_length=500)
     content_goal: str = Field(alias="contentGoal", max_length=500)
     sources: list[TopicSource] = Field(min_length=1, max_length=5)
+
 
 class TopicSuggestion(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
@@ -26,10 +28,12 @@ class TopicSuggestion(BaseModel):
     source_ids: list[StrictStr] = Field(alias="sourceIds", min_length=1, max_length=5)
     missing_evidence: list[StrictStr] = Field(alias="missingEvidence", max_length=8)
 
+
 class TopicPlanData(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
     model: str
     suggestions: list[TopicSuggestion] = Field(min_length=3, max_length=5)
+
 
 class TopicPlanResponse(SuccessResponse[TopicPlanData]):
     pass

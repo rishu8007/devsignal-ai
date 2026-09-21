@@ -13,16 +13,19 @@ class ResearchEvidence(BaseModel):
     text: StrictStr = Field(min_length=1, max_length=1000)
     score: float
 
+
 class ResearchBriefRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
     topic: str = Field(min_length=5, max_length=120)
     notes: str = Field(min_length=30, max_length=4000)
     evidence: list[ResearchEvidence] = Field(max_length=8)
 
+
 class ResearchTalkingPoint(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
     text: StrictStr = Field(min_length=1, max_length=1000)
     evidence_ids: list[StrictStr] = Field(alias="evidenceIds", max_length=8)
+
 
 class ResearchClaimAssessment(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
@@ -30,6 +33,7 @@ class ResearchClaimAssessment(BaseModel):
     assessment: str = Field(pattern="^(supported|partially_supported|unsupported|conflicting)$")
     explanation: StrictStr = Field(min_length=1, max_length=1000)
     evidence_ids: list[StrictStr] = Field(alias="evidenceIds", max_length=8)
+
 
 class ResearchBriefData(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
@@ -43,6 +47,7 @@ class ResearchBriefData(BaseModel):
     missing_information: list[str] = Field(alias="missingInformation", max_length=12)
     questions: list[str] = Field(max_length=12)
     limitations: list[str] = Field(max_length=8)
+
 
 class ResearchBriefResponse(SuccessResponse[ResearchBriefData]):
     pass

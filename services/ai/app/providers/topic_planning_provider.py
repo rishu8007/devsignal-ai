@@ -21,6 +21,7 @@ class TopicPlanningProvider:
         model: str,
     ) -> None:
         self.responses, self.close_client, self.model = responses, close_client, model
+
     async def plan(self, request: TopicPlanRequest) -> TopicPlanData:
         try:
             result = await self.responses.parse(
@@ -44,5 +45,6 @@ class TopicPlanningProvider:
         if not isinstance(output, TopicPlanData):
             raise ProviderError("invalid_response")
         return output
+
     async def close(self) -> None:
         await self.close_client()

@@ -5,6 +5,8 @@ from app.providers.research_brief_provider import ResearchBriefProvider
 from app.schemas.research_brief import ResearchBriefRequest, ResearchBriefResponse
 
 router = APIRouter()
+
+
 @router.post("/research-briefs", response_model=ResearchBriefResponse)
 async def create_research_brief(
     request: ResearchBriefRequest,

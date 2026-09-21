@@ -7,6 +7,7 @@ import { ensureResearchBriefIndexes } from "./repositories/research-brief.reposi
 import { ensureDraftReviewIndexes } from "./repositories/draft-review.repository.js";
 import { ensureContentWorkflowIndexes } from "./repositories/content-workflow.repository.js";
 import { startContentWorkflowWorker } from "./services/content-workflow.service.js";
+import { ensureLinkedInIndexes } from "./repositories/linkedin.repository.js";
 
 let server: Server | undefined;
 let stopWorkflowWorker: (() => void) | undefined;
@@ -55,6 +56,7 @@ async function startServer(): Promise<void> {
     await ensureResearchBriefIndexes();
     await ensureDraftReviewIndexes();
     await ensureContentWorkflowIndexes();
+    await ensureLinkedInIndexes();
   } catch {
     console.error("Database connection failed; the API server was not started.");
     process.exitCode = 1;

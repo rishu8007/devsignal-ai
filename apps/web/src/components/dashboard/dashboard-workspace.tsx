@@ -37,6 +37,7 @@ import { TopicPlannerView } from "@/components/dashboard/topic-planner-view";
 import { ResearchBriefView } from "@/components/dashboard/research-brief-view";
 import { DraftReviewPanel } from "@/components/dashboard/draft-review-panel";
 import { ContentWorkflowView } from "@/components/dashboard/content-workflow-view";
+import { LinkedInConnectionsView } from "@/components/dashboard/linkedin-connections-view";
 
 export function DashboardWorkspace() {
   const { invalidateSession, status: authStatus } = useAuth();
@@ -832,6 +833,7 @@ export function DashboardWorkspace() {
         onMutationPendingChange={setProfileMutationPending}
       />
       <TopicPlannerView active={activeTab === "planner"} />
+      <LinkedInConnectionsView active={activeTab === "connections"} />
       {researchSignal && <ResearchBriefView signal={researchSignal} onClose={() => setResearchSignal(null)} />}
     </>
   );

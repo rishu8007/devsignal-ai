@@ -34,6 +34,12 @@ const environmentSchema = z.object({
     .default("http://127.0.0.1:8000"),
   AI_INTERNAL_API_KEY: z.string().min(32).optional(),
   AI_SERVICE_TIMEOUT_MS: z.coerce.number().int().min(1000).max(300000).default(150000),
+  LINKEDIN_ENABLED: z.enum(["true", "false"]).default("false").transform((value) => value === "true"),
+  LINKEDIN_CLIENT_ID: z.string().trim().min(1).optional(),
+  LINKEDIN_CLIENT_SECRET: z.string().min(1).optional(),
+  LINKEDIN_REDIRECT_URI: z.string().url().optional(),
+  LINKEDIN_TOKEN_ENCRYPTION_KEY: z.string().optional(),
+  LINKEDIN_SCOPES: z.string().default("openid profile email"),
 });
 
 const parsedEnvironment = environmentSchema.safeParse(process.env);
@@ -47,3 +53,16 @@ if (!parsedEnvironment.success) {
 }
 
 export const env = parsedEnvironment.data;
+
+if (env.LINKEDIN_ENABLED) {
+  if (!env.LINKEDIN_CLIENT_ID || !env.LINKEDIN_CLIENT_SECRET || !env.LINKEDIN_REDIRECT_URI) {
+    throw new Error("LinkedIn configuration is incomplete.");
+  }
+  if (!env.LINKEDIN_TOKEN_ENCRYPTION_KEY) {
+    throw new Error("LINKEDIN_TOKEN_ENCRYPTION_KEY is required when LinkedIn is enabled.");
+  }
+  const key = Buffer.from(env.LINKEDIN_TOKEN_ENCRYPTION_KEY, "base64");
+  if (key.length !== 32) {
+    throw new Error("LINKEDIN_TOKEN_ENCRYPTION_KEY must be a base64-encoded 32-byte key.");
+  }
+}

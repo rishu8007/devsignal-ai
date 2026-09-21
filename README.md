@@ -17,6 +17,40 @@ content. The current product includes:
 Nothing publishes automatically. Automatic publishing and notifications are
 future plans, not implemented features.
 
+## LinkedIn connection
+
+LinkedIn connection is optional and disabled unless `LINKEDIN_ENABLED=true`.
+When enabled, configure a LinkedIn developer application with the fixed
+callback URL in `LINKEDIN_REDIRECT_URI`, client credentials, and a dedicated
+base64-encoded 32-byte `LINKEDIN_TOKEN_ENCRYPTION_KEY`. The tracked
+`services/api/.env.example` contains placeholders; never put real credentials
+in source control. The Compose app forwards these settings without requiring
+them when the integration is disabled.
+
+The connection flow is server-owned authorization-code OAuth with persisted,
+single-use state bound to the DevSignal session and S256 PKCE. It stores only
+encrypted access/refresh credentials and safe identity metadata. Disconnect
+removes locally usable credentials; LinkedIn remote revocation is not called by
+this connection-only milestone. Expired connections require reconnecting.
+Identity scopes (`openid profile email`) are distinct from posting capability;
+posting is shown as unavailable unless a future, separately approved product
+scope is granted. No LinkedIn publishing, scheduling, analytics, scraping, or
+browser automation is implemented.
+
+Official documentation consulted:
+
+- [LinkedIn OAuth overview](https://learn.microsoft.com/en-us/linkedin/shared/authentication/authentication)
+- [Authorization-code flow](https://learn.microsoft.com/en-us/linkedin/shared/authentication/authorization-code-flow)
+- [Programmatic refresh tokens](https://learn.microsoft.com/en-us/linkedin/shared/authentication/programmatic-refresh-tokens)
+- [Getting API access](https://learn.microsoft.com/en-us/linkedin/shared/authentication/getting-access)
+- [Sign In with LinkedIn using OpenID Connect](https://learn.microsoft.com/en-us/linkedin/consumer/integrations/self-serve/sign-in-with-linkedin-v2)
+
+LinkedIn access is product/application dependent: posting permission generally
+requires `w_member_social`, and refresh tokens are not available to every
+application. This milestone does not assume either permission. Mocked provider
+tests cover the local boundary; live LinkedIn consent, product approval,
+provider revocation, and browser redirect checks remain deferred.
+
 ## Signal content workflow
 
 The dashboard can start a bounded, persisted workflow from a saved Signal

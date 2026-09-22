@@ -9,10 +9,13 @@ import { ensureContentWorkflowIndexes } from "./repositories/content-workflow.re
 import { startContentWorkflowWorker } from "./services/content-workflow.service.js";
 import { ensureLinkedInIndexes } from "./repositories/linkedin.repository.js";
 import { startLinkedInSchedulerWorker } from "./services/linkedin-publication.service.js";
+import { startNotificationReconciliationWorker } from "./services/notification.service.js";
+import { ensureNotificationIndexes } from "./repositories/notification.repository.js";
 
 let server: Server | undefined;
 let stopWorkflowWorker: (() => void) | undefined;
 let stopLinkedInScheduler: (() => void | Promise<void>) | undefined;
+let stopNotificationWorker: (() => void | Promise<void>) | undefined;
 let isShuttingDown = false;
 
 async function closeHttpServer(): Promise<void> {
@@ -43,6 +46,7 @@ async function shutdown(signal: string): Promise<void> {
   try {
     stopWorkflowWorker?.();
     await stopLinkedInScheduler?.();
+    await stopNotificationWorker?.();
     await closeHttpServer();
     await disconnectFromDatabase();
     process.exitCode = 0;
@@ -60,6 +64,7 @@ async function startServer(): Promise<void> {
     await ensureDraftReviewIndexes();
     await ensureContentWorkflowIndexes();
     await ensureLinkedInIndexes();
+    await ensureNotificationIndexes();
   } catch {
     console.error("Database connection failed; the API server was not started.");
     process.exitCode = 1;
@@ -71,6 +76,7 @@ async function startServer(): Promise<void> {
   });
   stopWorkflowWorker = startContentWorkflowWorker();
   stopLinkedInScheduler = startLinkedInSchedulerWorker();
+  stopNotificationWorker = startNotificationReconciliationWorker();
 }
 
 process.once("SIGINT", () => {

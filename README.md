@@ -106,6 +106,39 @@ and isolated worker processes for the same deployment. The worker claims one
 job at a time, stops new claims on SIGINT/SIGTERM, and leaves an in-flight
 dispatch fenced for recovery rather than replaying it.
 
+### In-app notifications
+
+The authenticated `/api/v1/notifications` endpoints provide an owner-scoped,
+paginated inbox, unread count, single mark-read, and bounded
+`read-displayed` operations. Notifications are persisted with a unique event
+identity, so repeated reconciliation runs and restarts do not duplicate them.
+The reconciliation worker runs independently of provider dispatch, performs no
+publishing or retries, and uses a 15-minute lead time for future scheduled
+publication reminders. Reminder events include the schedule revision; cancelled
+or superseded reminders are excluded from the active inbox.
+
+Publication outcome notifications are derived from persisted states:
+published, failed/rejected, blocked, missed, and uncertain. Uncertain messages
+always tell the user to check LinkedIn and are never presented as success.
+Existing publications are reconciled for outcome notifications when the feature
+is introduced, but historical scheduled jobs do not create reminders because
+reminders require a future scheduled time within the lead window. Notification
+reconciliation processes publications in bounded `_id`-ordered pages of 100.
+The worker retains its cursor between passes and wraps back to the beginning,
+so older eligible jobs are eventually covered without loading the collection
+into memory. Each record is isolated so a failed notification write does not
+starve later records; a later pass retries the failed event using the same
+unique event identity. Restarting the worker restarts the bounded scan and
+therefore does not lose work. The inbox list endpoint may return a server-issued display snapshot timestamp
+for informational purposes only. `read-displayed` accepts the explicit
+notification IDs currently shown on the page, deduplicates them, caps the
+request at 50 IDs, and updates only matching notifications for the
+authenticated owner. Notifications on other pages, belonging to another
+owner, obsolete notifications, and later arrivals remain unread; repeating
+the request is harmless. The snapshot timestamp is not authorization or proof
+that a notification was displayed. Live MongoDB concurrency and broad browser
+testing remain deferred.
+
 ## Signal content workflow
 
 The dashboard can start a bounded, persisted workflow from a saved Signal

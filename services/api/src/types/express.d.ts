@@ -27,6 +27,7 @@ declare global {
       knowledgeSourceQuery: ListKnowledgeSourcesQuery;
       topicPlansQuery: z.infer<typeof topicPlansQuerySchema>;
       researchQuery: z.infer<typeof import("../validation/research-brief.validation.js").researchBriefQuerySchema>;
+      notificationQuery: z.infer<typeof import("../validation/notification.validation.js").notificationQuerySchema>;
     }
   }
 }

@@ -4,23 +4,24 @@ import { useEffect, useState } from "react";
 import { ApiClientError } from "@/lib/api/api-client";
 import { listLinkedInPublications, type LinkedInPublication } from "@/lib/api/linkedin-publication-client";
 
-export function LinkedInScheduledItems({ active }: { active: boolean }) {
+export function LinkedInScheduledItems({ active, focusPublicationId }: { active: boolean; focusPublicationId?: string | null }) {
   const [items, setItems] = useState<LinkedInPublication[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!active) return;
     void listLinkedInPublications()
-      .then((publications) => setItems(publications.filter((item) => item.status === "scheduled" || item.status === "missed" || item.status === "blocked")))
+      .then((publications) => setItems(publications.filter((item) => item.status === "scheduled" || item.status === "missed" || item.status === "blocked" || item.id === focusPublicationId)))
       .catch((cause) => setError(cause instanceof ApiClientError ? cause.message : "Scheduled LinkedIn items could not be loaded."));
-  }, [active]);
+  }, [active, focusPublicationId]);
 
-  if (!active || (!error && items.length === 0)) return null;
+  if (!active || (!error && items.length === 0 && !focusPublicationId)) return null;
   return (
     <section className="mt-8 rounded-xl border border-indigo-200 bg-indigo-50 p-5">
       <p className="text-sm font-semibold uppercase tracking-[0.16em] text-indigo-700">Automatic publishing</p>
       <h2 className="mt-2 text-xl font-semibold text-slate-900">LinkedIn schedule</h2>
       {error && <p className="mt-3 text-sm text-red-700">{error}</p>}
+      {!error && focusPublicationId && items.length === 0 && <p className="mt-3 text-sm text-slate-600">The related publication is no longer available.</p>}
       <div className="mt-4 grid gap-3">
         {items.map((item) => (
           <article key={item.id} className="rounded-lg border border-indigo-100 bg-white p-4">

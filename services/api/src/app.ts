@@ -17,6 +17,7 @@ import { professionalProfileRouter } from "./routes/professional-profile.routes.
 import { topicPlanningRouter } from "./routes/topic-planning.routes.js";
 import { linkedinRouter } from "./routes/linkedin.routes.js";
 import { linkedinPublicationRouter } from "./routes/linkedin-publication.routes.js";
+import { notificationRouter } from "./routes/notification.routes.js";
 
 export const app = express();
 
@@ -44,5 +45,6 @@ app.use("/api/v1/topic-plans", topicPlanningRouter);
 app.use("/api/v1/signals", signalRouter);
 app.use("/api/v1/connections", linkedinRouter);
 app.use("/api/v1/publications/linkedin", linkedinPublicationRouter);
+app.use("/api/v1/notifications", notificationRouter);
 app.use(notFoundMiddleware);
 app.use(errorMiddleware);

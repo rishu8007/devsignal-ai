@@ -39,6 +39,7 @@ import { DraftReviewPanel } from "@/components/dashboard/draft-review-panel";
 import { ContentWorkflowView } from "@/components/dashboard/content-workflow-view";
 import { LinkedInConnectionsView } from "@/components/dashboard/linkedin-connections-view";
 import { LinkedInScheduledItems } from "@/components/dashboard/linkedin-scheduled-items";
+import { NotificationBell } from "@/components/dashboard/notification-bell";
 
 export function DashboardWorkspace() {
   const { invalidateSession, status: authStatus } = useAuth();
@@ -79,6 +80,7 @@ export function DashboardWorkspace() {
   const [profileMutationPending, setProfileMutationPending] = useState(false);
   const [researchSignal, setResearchSignal] = useState<PublicSignal | null>(null);
   const [reviewTarget, setReviewTarget] = useState<{ variationId: string } | null>(null);
+  const [notificationPublicationId, setNotificationPublicationId] = useState<string | null>(null);
   const requestId = useRef(0);
   const listController = useRef<AbortController | null>(null);
   const generationRequestId = useRef(0);
@@ -681,6 +683,9 @@ export function DashboardWorkspace() {
         approved={draftLibrary?.summary.approved ?? null}
         scheduled={draftLibrary?.summary.scheduled ?? null}
       />
+      <div className="flex justify-end">
+        <NotificationBell active={authStatus === "authenticated"} onOpenRelated={(publicationId) => { setNotificationPublicationId(publicationId); setActiveTab("calendar"); }} />
+      </div>
       <WorkspaceNavigation
         activeTab={activeTab}
         onChange={handleWorkspaceTabChange}
@@ -821,7 +826,7 @@ export function DashboardWorkspace() {
           }}
           onOpen={(item) => void findSignalAndOpenDraft(item)}
         />
-        <LinkedInScheduledItems active={activeTab === "calendar"} />
+        <LinkedInScheduledItems active={activeTab === "calendar"} focusPublicationId={notificationPublicationId} />
         </>
       )}
       <KnowledgeSourcesView

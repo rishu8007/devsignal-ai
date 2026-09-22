@@ -159,3 +159,11 @@ export function listLinkedInPublications(ownerId: string) {
     .lean<LinkedInPublicationDocument[]>()
     .exec();
 }
+
+export function listLinkedInPublicationsPage(afterId: string | null, limit: number) {
+  return LinkedInPublicationModel.find(afterId ? { _id: { $gt: afterId } } : {})
+    .sort({ _id: 1 })
+    .limit(limit)
+    .lean<LinkedInPublicationDocument[]>()
+    .exec();
+}

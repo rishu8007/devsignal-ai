@@ -9,7 +9,7 @@ export interface LinkedInPublication {
   draftContentHash: string;
   account: { memberId: string; displayName: string | null };
   visibility: "PUBLIC";
-  status: "pending" | "published" | "rejected" | "uncertain";
+  status: "pending" | "scheduled" | "published" | "rejected" | "uncertain" | "cancelled" | "missed" | "blocked";
   providerPostId: string | null;
   postUrl: string | null;
   errorCode: string | null;
@@ -18,11 +18,14 @@ export interface LinkedInPublication {
   createdAt: string;
   dispatchedAt: string | null;
   publishedAt: string | null;
+  scheduledAt: string | null;
+  scheduledTimezone: string | null;
+  scheduleRevision: number;
 }
 
 function isPublication(value: unknown): value is LinkedInPublication {
   return typeof value === "object" && value !== null && "id" in value && typeof value.id === "string" &&
-    "status" in value && (value.status === "pending" || value.status === "published" || value.status === "rejected" || value.status === "uncertain");
+    "status" in value && (value.status === "pending" || value.status === "scheduled" || value.status === "published" || value.status === "rejected" || value.status === "uncertain" || value.status === "cancelled" || value.status === "missed" || value.status === "blocked");
 }
 
 export function createLinkedInPreview(signalId: string, variationId: string): Promise<LinkedInPublication> {
@@ -54,4 +57,36 @@ export function listLinkedInPublications(): Promise<LinkedInPublication[]> {
     "publications" in value.data && Array.isArray(value.data.publications) &&
     value.data.publications.every(isPublication),
   ).then((value) => value.data.publications);
+}
+
+export function scheduleLinkedInPublication(input: {
+  previewId: string;
+  localDateTime: string;
+  timezone: string;
+  disambiguation?: "earlier" | "later";
+}): Promise<LinkedInPublication> {
+  return request("/publications/linkedin/schedule", { method: "POST", body: JSON.stringify(input) }, (value): value is { success: true; data: { publication: LinkedInPublication } } =>
+    typeof value === "object" && value !== null && "success" in value && value.success === true && "data" in value &&
+    typeof value.data === "object" && value.data !== null && "publication" in value.data && isPublication(value.data.publication),
+  ).then((value) => value.data.publication);
+}
+
+export function cancelLinkedInPublication(previewId: string, expectedRevision: number): Promise<LinkedInPublication> {
+  return request("/publications/linkedin/cancel", { method: "POST", body: JSON.stringify({ previewId, expectedRevision }) }, (value): value is { success: true; data: { publication: LinkedInPublication } } =>
+    typeof value === "object" && value !== null && "success" in value && value.success === true && "data" in value &&
+    typeof value.data === "object" && value.data !== null && "publication" in value.data && isPublication(value.data.publication),
+  ).then((value) => value.data.publication);
+}
+
+export function rescheduleLinkedInPublication(input: {
+  previewId: string;
+  expectedRevision: number;
+  localDateTime: string;
+  timezone: string;
+  disambiguation?: "earlier" | "later";
+}): Promise<LinkedInPublication> {
+  return request("/publications/linkedin/reschedule", { method: "POST", body: JSON.stringify(input) }, (value): value is { success: true; data: { publication: LinkedInPublication } } =>
+    typeof value === "object" && value !== null && "success" in value && value.success === true && "data" in value &&
+    typeof value.data === "object" && value.data !== null && "publication" in value.data && isPublication(value.data.publication),
+  ).then((value) => value.data.publication);
 }

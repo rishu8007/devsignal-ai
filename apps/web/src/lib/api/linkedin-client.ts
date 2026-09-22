@@ -3,6 +3,7 @@ import { request } from "./api-client";
 export interface LinkedInStatus {
   enabled: boolean;
   publishingEnabled?: boolean;
+  schedulerEnabled?: boolean;
   status: "not_configured" | "disconnected" | "connected" | "reconnect_required";
   connected?: boolean;
   identity?: { memberId: string; displayName: string | null; email: string | null };

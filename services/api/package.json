@@ -8,6 +8,7 @@
     "dev": "tsx watch src/server.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/server.js",
+    "scheduler": "node dist/linkedin-scheduler-worker.js",
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test"
   },

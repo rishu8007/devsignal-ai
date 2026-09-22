@@ -74,6 +74,38 @@ and [member authorization documentation](https://learn.microsoft.com/en-us/linke
 Live compatibility, product approval, and real-provider behavior remain
 deferred; all local tests use mocked provider responses.
 
+Scheduled LinkedIn publishing is separately disabled by default with
+`LINKEDIN_SCHEDULER_ENABLED=false`. When enabled, the same immutable
+publication snapshot and duplicate operation key are used for scheduling and
+Publish now. Scheduling stores the UTC execution instant and the selected
+IANA timezone, requires an explicit scheduling confirmation, and validates
+nonexistent/repeated daylight-saving times. Repeated local times require an
+earlier/later choice. The default horizon is 90 days and the default late
+window is 60 minutes; jobs overdue beyond that window become `missed` instead
+of publishing an unexpected backlog.
+
+The API process starts a bounded, lease-based due-job worker only when the
+scheduler flag is enabled. It has no public port and does not run in local
+development unless explicitly configured. Claims are fenced, cancellation and
+rescheduling compete atomically, and a job is revalidated immediately before
+dispatch. A crash or timeout after dispatch remains uncertain and is never
+blindly retried. Ordinary manual Calendar entries remain reminders and never
+become automatic jobs. The scheduled worker has mocked-clock tests; live
+MongoDB races and browser timezone rehearsals remain deferred.
+
+The worker entry point is `startLinkedInSchedulerWorker` in
+`services/api/src/services/linkedin-publication.service.ts`; the normal API
+server starts it after indexes are initialized, and it is a no-op while
+`LINKEDIN_SCHEDULER_ENABLED=false`. No separate scheduler process or public
+worker port is required.
+
+For an isolated worker process, build the API and run
+`npm run scheduler --workspace services/api` with
+`LINKEDIN_SCHEDULER_ENABLED=true`. Do not enable the scheduler in both the API
+and isolated worker processes for the same deployment. The worker claims one
+job at a time, stops new claims on SIGINT/SIGTERM, and leaves an in-flight
+dispatch fenced for recovery rather than replaying it.
+
 ## Signal content workflow
 
 The dashboard can start a bounded, persisted workflow from a saved Signal

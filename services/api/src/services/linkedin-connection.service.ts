@@ -64,10 +64,11 @@ function publicConnection(connection: Awaited<ReturnType<typeof findLinkedInConn
 }
 
 export function getLinkedInStatus(ownerId: string, repository: LinkedInConnectionRepository = defaultRepository) {
-  if (!env.LINKEDIN_ENABLED) return Promise.resolve({ enabled: false, publishingEnabled: false, status: "not_configured" as const });
+  if (!env.LINKEDIN_ENABLED) return Promise.resolve({ enabled: false, publishingEnabled: false, schedulerEnabled: false, status: "not_configured" as const });
   return repository.findConnection(ownerId).then((connection) => ({
     enabled: true,
     publishingEnabled: env.LINKEDIN_PUBLISHING_ENABLED,
+    schedulerEnabled: env.LINKEDIN_SCHEDULER_ENABLED,
     ...publicConnection(connection),
     status: connection && connection.expiresAt <= new Date() ? "reconnect_required" : publicConnection(connection).status,
   }));

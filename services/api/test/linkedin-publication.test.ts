@@ -4,8 +4,12 @@ import { Types } from "mongoose";
 import { env } from "../src/config/env.js";
 import { encryptLinkedInSecret } from "../src/services/linkedin-crypto.js";
 import {
+  cancelScheduledLinkedInPublication,
   confirmLinkedInPublication,
   createLinkedInPublicationPreview,
+  dispatchClaimedLinkedInPublication,
+  rescheduleLinkedInPublication,
+  scheduleLinkedInPublication,
   type LinkedInPublicationRepository,
 } from "../src/services/linkedin-publication.service.js";
 import type { LinkedInPublishingClient } from "../src/clients/linkedin-publishing.client.js";
@@ -49,19 +53,63 @@ function repository(overrides: Partial<LinkedInPublicationRepository> = {}) {
     findByOperationKey: async (_owner, operationKey) => [...stored.values()].find((item) => item.operationKey === operationKey) ?? null,
     createPublication: async (input) => {
       const record = { ...input, _id: new Types.ObjectId(), createdAt: new Date(), dispatchedAt: null, publishedAt: null, providerPostId: null, errorCode: null, errorMessage: null };
-      stored.set(record.previewId, record);
+        record.scheduleRevision = 0;
+        stored.set(record.previewId, record);
       return record as never;
     },
-    claimPublication: async (id, now) => {
+    claimPublication: async (id, leaseId, now) => {
       const record = [...stored.values()].find((item) => item._id.toString() === id);
       if (!record || record.status !== "pending" || record.previewExpiresAt <= now) return null;
+      record.leaseId = leaseId;
+      record.leaseExpiresAt = new Date(now.getTime() + 120_000);
+      return record;
+    },
+    authorizeDispatch: async (id, leaseId, expectedRevision, now) => {
+      const record = [...stored.values()].find((item) => item._id.toString() === id);
+      if (!record || !["pending", "scheduled"].includes(record.status) || record.scheduleRevision !== expectedRevision || record.leaseId !== leaseId || record.leaseExpiresAt <= now || record.cancelledAt) return null;
       record.status = "dispatching";
+      record.dispatchAuthorizedAt = now;
       record.dispatchedAt = now;
       return record;
     },
     updatePublication: async (id, update) => {
       const record = [...stored.values()].find((item) => item._id.toString() === id);
       if (!record) return null;
+      Object.assign(record, update);
+      return record;
+    },
+    schedulePublication: async (id, expectedRevision, input) => {
+      const record = [...stored.values()].find((item) => item._id.toString() === id);
+      if (!record || record.status !== "pending" || record.scheduleRevision !== expectedRevision) return null;
+      Object.assign(record, input, { status: "scheduled" });
+      record.scheduleRevision += 1;
+      return record;
+    },
+    cancelPublication: async (id, expectedRevision, now) => {
+      const record = [...stored.values()].find((item) => item._id.toString() === id);
+      if (!record || record.status !== "scheduled" || record.scheduleRevision !== expectedRevision) return null;
+      Object.assign(record, { status: "cancelled", cancelledAt: now });
+      record.scheduleRevision += 1;
+      return record;
+    },
+    reschedulePublication: async (id, expectedRevision, scheduledAt, timezone) => {
+      const record = [...stored.values()].find((item) => item._id.toString() === id);
+      if (!record || record.status !== "scheduled" || record.scheduleRevision !== expectedRevision) return null;
+      Object.assign(record, { scheduledAt, scheduledTimezone: timezone });
+      record.scheduleRevision += 1;
+      return record;
+    },
+    claimDuePublication: async () => null,
+    blockUnpublishedPublication: async (id, leaseId, update) => {
+      const record = [...stored.values()].find((item) => item._id.toString() === id);
+      if (!record || record.status !== "scheduled" || record.leaseId !== leaseId || record.dispatchAuthorizedAt) return null;
+      Object.assign(record, update, { leaseId: null, leaseExpiresAt: null });
+      return record;
+    },
+    recoverExpiredDispatch: async () => null,
+    fencePublication: async (id, leaseId, update) => {
+      const record = [...stored.values()].find((item) => item._id.toString() === id);
+      if (!record || record.status !== "dispatching" || record.leaseId !== leaseId) return null;
       Object.assign(record, update);
       return record;
     },
@@ -213,6 +261,145 @@ test("provider timeout is uncertain and performs no retry", async () => {
   const client = new HttpLinkedInPublishingClient(async () => {
     calls += 1;
     throw new Error("timeout");
+  });
+
+  test("scheduling validates timezone and DST, then supports reschedule and cancel", async () => {
+    enablePublishing();
+    const mutable = env as typeof env & Record<string, unknown>;
+    mutable.LINKEDIN_SCHEDULER_ENABLED = true;
+    const fixedNow = new Date("2026-01-01T12:00:00.000Z");
+    const repo = repository();
+    const preview = await createLinkedInPublicationPreview(ownerId, signalId, variationId.toString(), fixedNow, repo.base);
+    await assert.rejects(
+      scheduleLinkedInPublication(ownerId, preview.id, "2026-03-08T02:30", "America/New_York", "earlier", fixedNow, repo.base),
+      /does not exist/i,
+    );
+    await assert.rejects(
+      scheduleLinkedInPublication(ownerId, preview.id, "2026-11-01T01:30", "America/New_York", undefined, fixedNow, repo.base),
+      /repeated daylight-saving/i,
+    );
+    const scheduled = await scheduleLinkedInPublication(ownerId, preview.id, "2026-03-20T09:30", "America/New_York", "earlier", fixedNow, repo.base);
+    assert.equal(scheduled.status, "scheduled");
+    assert.equal(scheduled.scheduledTimezone, "America/New_York");
+    const rescheduled = await rescheduleLinkedInPublication(ownerId, preview.id, scheduled.scheduleRevision, "2026-03-21T09:30", "America/New_York", "earlier", fixedNow, repo.base);
+    assert.equal(rescheduled.scheduleRevision, 2);
+    const cancelled = await cancelScheduledLinkedInPublication(ownerId, preview.id, rescheduled.scheduleRevision, fixedNow, repo.base);
+    assert.equal(cancelled.status, "cancelled");
+  });
+
+  test("scheduled authorization shares the duplicate guard with immediate publishing", async () => {
+    enablePublishing();
+    const mutable = env as typeof env & Record<string, unknown>;
+    mutable.LINKEDIN_SCHEDULER_ENABLED = true;
+    const fixedNow = new Date("2026-01-01T12:00:00.000Z");
+    const repo = repository();
+    const preview = await createLinkedInPublicationPreview(ownerId, signalId, variationId.toString(), fixedNow, repo.base);
+    const scheduled = await scheduleLinkedInPublication(ownerId, preview.id, "2026-03-20T09:30", "America/New_York", "earlier", fixedNow, repo.base);
+    let calls = 0;
+    const provider: LinkedInPublishingClient = { publishTextPost: async () => { calls += 1; return { kind: "published", providerPostId: "should-not-send" }; } };
+    const immediate = await confirmLinkedInPublication(ownerId, scheduled.id, provider, fixedNow, repo.base);
+    assert.equal(immediate.status, "scheduled");
+    assert.equal(calls, 0);
+  });
+
+  test("cancellation wins against a preliminary worker lease", async () => {
+    enablePublishing();
+    const mutable = env as typeof env & Record<string, unknown>;
+    mutable.LINKEDIN_SCHEDULER_ENABLED = true;
+    const fixedNow = new Date("2026-01-01T12:00:00.000Z");
+    const repo = repository();
+    const preview = await createLinkedInPublicationPreview(ownerId, signalId, variationId.toString(), fixedNow, repo.base);
+    const scheduled = await scheduleLinkedInPublication(ownerId, preview.id, "2026-03-20T09:30", "America/New_York", "earlier", fixedNow, repo.base);
+    const stored = repo.stored.get(scheduled.id);
+    stored.leaseId = "old-worker";
+    stored.leaseExpiresAt = new Date("2026-03-20T14:01:00.000Z");
+    const cancelled = await cancelScheduledLinkedInPublication(ownerId, preview.id, scheduled.scheduleRevision, fixedNow, repo.base);
+    assert.equal(cancelled.status, "cancelled");
+    let calls = 0;
+    const result = await dispatchClaimedLinkedInPublication(stored, "old-worker", { publishTextPost: async () => { calls += 1; return { kind: "published", providerPostId: "must-not-send" }; } }, new Date("2026-03-20T14:00:00.000Z"), repo.base);
+    assert.equal(result, null);
+    assert.equal(calls, 0);
+  });
+
+  test("reapproval changes the approval fingerprint and blocks old scheduling consent", async () => {
+    enablePublishing();
+    const fixedNow = new Date("2026-01-01T12:00:00.000Z");
+    const repo = repository();
+    repo.generation.updatedAt = new Date("2026-01-01T11:00:00.000Z");
+    const preview = await createLinkedInPublicationPreview(ownerId, signalId, variationId.toString(), fixedNow, repo.base);
+    repo.generation.updatedAt = new Date("2026-01-01T11:00:00.000Z");
+    const scheduled = await scheduleLinkedInPublication(ownerId, preview.id, "2026-03-20T09:30", "America/New_York", "earlier", fixedNow, repo.base);
+    assert.equal(scheduled.status, "scheduled");
+    repo.generation.updatedAt = new Date("2026-01-01T11:45:00.000Z");
+    const stored = repo.stored.get(scheduled.id);
+    stored.leaseId = "approval-change";
+    stored.leaseExpiresAt = new Date("2026-03-20T14:01:00.000Z");
+    let calls = 0;
+    const result = await dispatchClaimedLinkedInPublication(stored, "approval-change", { publishTextPost: async () => { calls += 1; return { kind: "published", providerPostId: "must-not-send" }; } }, new Date("2026-03-20T14:00:00.000Z"), repo.base);
+    assert.equal(result?.status, "blocked");
+    assert.equal(calls, 0);
+  });
+
+  test("disabled scheduling prevents provider dispatch", async () => {
+    enablePublishing();
+    const mutable = env as typeof env & Record<string, unknown>;
+    mutable.LINKEDIN_SCHEDULER_ENABLED = false;
+    const repo = repository();
+    const preview = await createLinkedInPublicationPreview(ownerId, signalId, variationId.toString(), new Date("2026-01-01T12:00:00.000Z"), repo.base);
+    await assert.rejects(scheduleLinkedInPublication(ownerId, preview.id, "2026-03-20T09:30", "America/New_York", "earlier", new Date("2026-01-01T12:00:00.000Z"), repo.base), /not enabled/i);
+  });
+
+  test("scheduled dispatch fences the lease and publishes the immutable snapshot", async () => {
+    enablePublishing();
+    const mutable = env as typeof env & Record<string, unknown>;
+    mutable.LINKEDIN_SCHEDULER_ENABLED = true;
+    const fixedNow = new Date("2026-03-20T14:00:00.000Z");
+    const repo = repository();
+    const preview = await createLinkedInPublicationPreview(ownerId, signalId, variationId.toString(), new Date("2026-01-01T12:00:00.000Z"), repo.base);
+    const scheduled = await scheduleLinkedInPublication(ownerId, preview.id, "2026-03-20T09:30", "America/New_York", "earlier", new Date("2026-01-01T12:00:00.000Z"), repo.base);
+    const stored = repo.stored.get(scheduled.id);
+    stored.status = "scheduled";
+    stored.leaseId = "lease";
+    stored.leaseExpiresAt = new Date(fixedNow.getTime() + 60_000);
+    stored.scheduledAt = new Date("2026-03-20T13:30:00.000Z");
+    let sent = "";
+    const result = await dispatchClaimedLinkedInPublication(stored, "lease", {
+      publishTextPost: async (_token, _member, content) => {
+        sent = content;
+        return { kind: "published", providerPostId: "urn:li:share:scheduled" };
+      },
+    }, fixedNow, repo.base);
+    assert.equal(result?.status, "published");
+    assert.equal(sent, text);
+  });
+
+  test("overdue jobs become missed and stale lease results cannot advance state", async () => {
+    enablePublishing();
+    const mutable = env as typeof env & Record<string, unknown>;
+    mutable.LINKEDIN_SCHEDULER_ENABLED = true;
+    const repo = repository();
+    const preview = await createLinkedInPublicationPreview(ownerId, signalId, variationId.toString(), new Date("2026-01-01T12:00:00.000Z"), repo.base);
+    const scheduled = await scheduleLinkedInPublication(ownerId, preview.id, "2026-03-20T09:30", "America/New_York", "earlier", new Date("2026-01-01T12:00:00.000Z"), repo.base);
+    const stored = repo.stored.get(scheduled.id);
+    stored.status = "scheduled";
+    stored.leaseId = "expired-lease";
+    stored.leaseExpiresAt = new Date("2026-03-20T11:00:00.000Z");
+    stored.scheduledAt = new Date("2026-03-20T10:00:00.000Z");
+    const missed = await dispatchClaimedLinkedInPublication(stored, "expired-lease", {
+      publishTextPost: async () => ({ kind: "published", providerPostId: "must-not-send" }),
+    }, new Date("2026-03-20T12:00:01.000Z"), repo.base);
+    assert.equal(missed?.status, "missed");
+
+    stored.status = "scheduled";
+    stored.leaseId = "old";
+    stored.leaseExpiresAt = new Date("2026-03-20T11:00:00.000Z");
+    const originalFence = repo.base.fencePublication;
+    repo.base.fencePublication = async () => null;
+    const rejected = await dispatchClaimedLinkedInPublication(stored, "old", {
+      publishTextPost: async () => ({ kind: "published", providerPostId: "must-not-send" }),
+    }, new Date("2026-03-20T10:00:00.000Z"), repo.base);
+    assert.equal(rejected, null);
+    repo.base.fencePublication = originalFence;
   });
   const result = await client.publishTextPost("token", "member-123", text);
   assert.equal(result.kind, "uncertain");

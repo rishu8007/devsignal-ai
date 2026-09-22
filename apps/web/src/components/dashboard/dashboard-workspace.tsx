@@ -38,6 +38,7 @@ import { ResearchBriefView } from "@/components/dashboard/research-brief-view";
 import { DraftReviewPanel } from "@/components/dashboard/draft-review-panel";
 import { ContentWorkflowView } from "@/components/dashboard/content-workflow-view";
 import { LinkedInConnectionsView } from "@/components/dashboard/linkedin-connections-view";
+import { LinkedInScheduledItems } from "@/components/dashboard/linkedin-scheduled-items";
 
 export function DashboardWorkspace() {
   const { invalidateSession, status: authStatus } = useAuth();
@@ -791,6 +792,7 @@ export function DashboardWorkspace() {
         />
       )}
       {activeTab === "calendar" && (
+        <>
         <CalendarView
           month={calendarMonth}
           data={calendarData}
@@ -819,6 +821,8 @@ export function DashboardWorkspace() {
           }}
           onOpen={(item) => void findSignalAndOpenDraft(item)}
         />
+        <LinkedInScheduledItems active={activeTab === "calendar"} />
+        </>
       )}
       <KnowledgeSourcesView
         active={activeTab === "knowledge"}

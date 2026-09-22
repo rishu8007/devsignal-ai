@@ -53,12 +53,99 @@ export function createLinkedInPublication(input: Record<string, unknown>) {
   return LinkedInPublicationModel.create(input);
 }
 
-export function claimLinkedInPublication(id: string, now: Date) {
+export function claimLinkedInPublication(id: string, leaseId: string, now: Date) {
   return LinkedInPublicationModel.findOneAndUpdate(
     { _id: id, status: "pending", previewExpiresAt: { $gt: now } },
-    { $set: { status: "dispatching", dispatchedAt: now, updatedAt: now } },
+    { $set: { leaseId, leaseExpiresAt: new Date(now.getTime() + 120_000), updatedAt: now } },
     { new: true },
   ).lean<LinkedInPublicationDocument>().exec();
+}
+
+export function authorizeLinkedInPublicationDispatch(id: string, leaseId: string, expectedRevision: number, now: Date) {
+  return LinkedInPublicationModel.findOneAndUpdate(
+    {
+      _id: id,
+      status: { $in: ["pending", "scheduled"] },
+      leaseId,
+      leaseExpiresAt: { $gt: now },
+      cancelledAt: null,
+      scheduleRevision: expectedRevision,
+    },
+    { $set: { status: "dispatching", dispatchAuthorizedAt: now, dispatchedAt: now, updatedAt: now } },
+    { new: true },
+  ).lean<LinkedInPublicationDocument>().exec();
+}
+
+export function scheduleLinkedInPublication(id: string, expectedRevision: number, input: Record<string, unknown>) {
+  return LinkedInPublicationModel.findOneAndUpdate(
+    { _id: id, status: "pending", scheduleRevision: expectedRevision, previewExpiresAt: { $gt: new Date() } },
+    { $set: { ...input, status: "scheduled", schedulingAuthorizedAt: new Date() }, $inc: { scheduleRevision: 1 } },
+    { new: true },
+  ).lean<LinkedInPublicationDocument>().exec();
+}
+
+export function cancelLinkedInPublication(id: string, expectedRevision: number, now: Date) {
+  return LinkedInPublicationModel.findOneAndUpdate(
+    { _id: id, status: { $in: ["scheduled", "pending"] }, scheduleRevision: expectedRevision },
+    { $set: { status: "cancelled", cancelledAt: now }, $inc: { scheduleRevision: 1 } },
+    { new: true },
+  ).lean<LinkedInPublicationDocument>().exec();
+}
+
+export function rescheduleLinkedInPublication(id: string, expectedRevision: number, scheduledAt: Date, timezone: string, now: Date) {
+  return LinkedInPublicationModel.findOneAndUpdate(
+    { _id: id, status: "scheduled", scheduleRevision: expectedRevision },
+    { $set: { scheduledAt, scheduledTimezone: timezone, schedulingAuthorizedAt: now }, $inc: { scheduleRevision: 1 } },
+    { new: true },
+  ).lean<LinkedInPublicationDocument>().exec();
+}
+
+export function claimDueLinkedInPublication(leaseId: string, leaseExpiresAt: Date, now: Date) {
+  return LinkedInPublicationModel.findOneAndUpdate(
+    {
+      status: "scheduled",
+      scheduledAt: { $lte: now },
+      $or: [{ leaseId: null }, { leaseExpiresAt: { $lte: now } }],
+    },
+    { $set: { leaseId, leaseExpiresAt, updatedAt: now } },
+    { sort: { scheduledAt: 1, _id: 1 }, new: true },
+  ).lean<LinkedInPublicationDocument>().exec();
+}
+
+export function fenceLinkedInPublication(id: string, leaseId: string, update: Record<string, unknown>) {
+  return LinkedInPublicationModel.findOneAndUpdate(
+    { _id: id, status: "dispatching", leaseId },
+    { $set: update, $unset: { leaseId: 1, leaseExpiresAt: 1 } },
+    { new: true },
+  ).lean<LinkedInPublicationDocument>().exec();
+}
+
+export function blockUnpublishedLinkedInPublication(id: string, leaseId: string, update: Record<string, unknown>) {
+  return LinkedInPublicationModel.findOneAndUpdate(
+    { _id: id, status: "scheduled", leaseId, dispatchAuthorizedAt: null },
+    { $set: update, $unset: { leaseId: 1, leaseExpiresAt: 1 } },
+    { new: true },
+  ).lean<LinkedInPublicationDocument>().exec();
+}
+
+export function recoverExpiredLinkedInDispatch(now: Date) {
+  return LinkedInPublicationModel.findOneAndUpdate(
+    { status: "dispatching", leaseExpiresAt: { $lte: now } },
+    {
+      $set: {
+        status: "uncertain",
+        errorCode: "DISPATCH_LEASE_EXPIRED",
+        errorMessage: "Dispatch may have reached LinkedIn. Check LinkedIn before taking further action.",
+      },
+      $unset: { leaseId: 1, leaseExpiresAt: 1 },
+    },
+    { sort: { dispatchedAt: 1, _id: 1 }, new: true },
+  ).lean<LinkedInPublicationDocument>().exec();
+}
+
+export function listDueLinkedInPublications(now: Date) {
+  return LinkedInPublicationModel.find({ status: "scheduled", scheduledAt: { $lte: now } })
+    .sort({ scheduledAt: 1, _id: 1 }).limit(10).lean<LinkedInPublicationDocument[]>().exec();
 }
 
 export function updateLinkedInPublication(id: string, update: Record<string, unknown>) {

@@ -43,6 +43,9 @@ const environmentSchema = z.object({
   LINKEDIN_POSTING_SCOPES: z.string().default("openid profile email w_member_social"),
   LINKEDIN_API_VERSION: z.string().regex(/^\d{6}$/).default("202601"),
   LINKEDIN_PUBLISHING_ENABLED: z.enum(["true", "false"]).default("false").transform((value) => value === "true"),
+  LINKEDIN_SCHEDULER_ENABLED: z.enum(["true", "false"]).default("false").transform((value) => value === "true"),
+  LINKEDIN_SCHEDULE_HORIZON_DAYS: z.coerce.number().int().min(1).max(365).default(90),
+  LINKEDIN_SCHEDULE_LATE_WINDOW_MINUTES: z.coerce.number().int().min(1).max(1440).default(60),
 });
 
 const parsedEnvironment = environmentSchema.safeParse(process.env);

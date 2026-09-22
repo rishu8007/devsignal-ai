@@ -8,9 +8,11 @@ import { ensureDraftReviewIndexes } from "./repositories/draft-review.repository
 import { ensureContentWorkflowIndexes } from "./repositories/content-workflow.repository.js";
 import { startContentWorkflowWorker } from "./services/content-workflow.service.js";
 import { ensureLinkedInIndexes } from "./repositories/linkedin.repository.js";
+import { startLinkedInSchedulerWorker } from "./services/linkedin-publication.service.js";
 
 let server: Server | undefined;
 let stopWorkflowWorker: (() => void) | undefined;
+let stopLinkedInScheduler: (() => void | Promise<void>) | undefined;
 let isShuttingDown = false;
 
 async function closeHttpServer(): Promise<void> {
@@ -40,6 +42,7 @@ async function shutdown(signal: string): Promise<void> {
 
   try {
     stopWorkflowWorker?.();
+    await stopLinkedInScheduler?.();
     await closeHttpServer();
     await disconnectFromDatabase();
     process.exitCode = 0;
@@ -67,6 +70,7 @@ async function startServer(): Promise<void> {
     console.log(`DevSignal API listening on port ${env.PORT}`);
   });
   stopWorkflowWorker = startContentWorkflowWorker();
+  stopLinkedInScheduler = startLinkedInSchedulerWorker();
 }
 
 process.once("SIGINT", () => {

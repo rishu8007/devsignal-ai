@@ -9,8 +9,16 @@ import { validateRequest } from "../middleware/validate-request.middleware.js";
 import { linkedinPublishingRateLimitMiddleware } from "../middleware/linkedin-publishing-rate-limit.middleware.js";
 import {
   linkedinPublicationConfirmSchema,
+  linkedinPublicationScheduleSchema,
+  linkedinPublicationRescheduleSchema,
+  linkedinPublicationCancelSchema,
   linkedinPublicationPreviewSchema,
 } from "../validation/linkedin-publication.validation.js";
+import {
+  cancelLinkedInPublicationRequest,
+  rescheduleLinkedInPublicationRequest,
+  scheduleLinkedInPublicationRequest,
+} from "../controllers/linkedin-publication.controller.js";
 
 export const linkedinPublicationRouter = Router();
 
@@ -22,6 +30,9 @@ linkedinPublicationRouter.post(
   validateRequest(linkedinPublicationPreviewSchema),
   previewLinkedInPublication,
 );
+linkedinPublicationRouter.post("/schedule", validateRequest(linkedinPublicationScheduleSchema), scheduleLinkedInPublicationRequest);
+linkedinPublicationRouter.post("/reschedule", validateRequest(linkedinPublicationRescheduleSchema), rescheduleLinkedInPublicationRequest);
+linkedinPublicationRouter.post("/cancel", validateRequest(linkedinPublicationCancelSchema), cancelLinkedInPublicationRequest);
 linkedinPublicationRouter.post(
   "/confirm",
   validateRequest(linkedinPublicationConfirmSchema),

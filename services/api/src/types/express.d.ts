@@ -7,6 +7,7 @@ import type {
 } from "../validation/knowledge-source.validation.js";
 import type { z } from "zod";
 import type { topicPlansQuerySchema } from "../validation/topic-planning.validation.js";
+import type { AnalyticsQuery } from "../validation/analytics.validation.js";
 
 declare global {
   namespace Express {
@@ -28,6 +29,8 @@ declare global {
       topicPlansQuery: z.infer<typeof topicPlansQuerySchema>;
       researchQuery: z.infer<typeof import("../validation/research-brief.validation.js").researchBriefQuerySchema>;
       notificationQuery: z.infer<typeof import("../validation/notification.validation.js").notificationQuerySchema>;
+      analyticsQuery: AnalyticsQuery;
+      snapshotId: string;
     }
   }
 }

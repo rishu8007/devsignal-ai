@@ -139,6 +139,34 @@ the request is harmless. The snapshot timestamp is not authorization or proof
 that a notification was displayed. Live MongoDB concurrency and broad browser
 testing remain deferred.
 
+### Analytics
+
+The authenticated `/api/v1/analytics` endpoint reports owner-scoped activity
+for a 7-day, 30-day, or bounded custom range. Date boundaries are local
+midnights in the explicitly supplied IANA reporting timezone and are converted
+to UTC before querying. Signal and completed-generation activity use `createdAt`;
+confirmed publications use `publishedAt`; publication outcomes use the
+publication `updatedAt`; approved variations and scheduled publications are
+current-state counts rather than period activity. Preview records, manual
+calendar plans, and uncertain publications are not counted as confirmed posts
+or confirmed failures.
+
+Engagement is deliberately manual. Users may record cumulative impressions,
+reactions, comments, reposts, and an observation time only for their own
+confirmed published posts. Blank values mean unknown, not zero. Topic
+comparisons use the exact Signal `topic` text (no AI classification), filter
+posts by publication date, and use only the latest applicable snapshot per
+post at or before the report end. The displayed engagement rate is
+`(reactions + comments + reposts) / impressions`; it is unavailable when
+impressions are unknown or zero. Technical-review summaries use the latest
+successful, non-stale review for each signal/variation population and are not
+predictions of LinkedIn engagement.
+
+Snapshot edits and deletions require an expected revision and ownership. The
+dashboard labels all entries “Manually entered”; there is no LinkedIn scraping,
+analytics API request, or additional OAuth permission. Analytics aggregation
+and live MongoDB concurrency/browser verification remain deferred checks.
+
 ## Signal content workflow
 
 The dashboard can start a bounded, persisted workflow from a saved Signal

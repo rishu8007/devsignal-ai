@@ -11,6 +11,7 @@ import { ensureLinkedInIndexes } from "./repositories/linkedin.repository.js";
 import { startLinkedInSchedulerWorker } from "./services/linkedin-publication.service.js";
 import { startNotificationReconciliationWorker } from "./services/notification.service.js";
 import { ensureNotificationIndexes } from "./repositories/notification.repository.js";
+import { ensureAnalyticsIndexes } from "./repositories/analytics.repository.js";
 
 let server: Server | undefined;
 let stopWorkflowWorker: (() => void) | undefined;
@@ -65,6 +66,7 @@ async function startServer(): Promise<void> {
     await ensureContentWorkflowIndexes();
     await ensureLinkedInIndexes();
     await ensureNotificationIndexes();
+    await ensureAnalyticsIndexes();
   } catch {
     console.error("Database connection failed; the API server was not started.");
     process.exitCode = 1;

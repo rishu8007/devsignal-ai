@@ -40,6 +40,7 @@ import { ContentWorkflowView } from "@/components/dashboard/content-workflow-vie
 import { LinkedInConnectionsView } from "@/components/dashboard/linkedin-connections-view";
 import { LinkedInScheduledItems } from "@/components/dashboard/linkedin-scheduled-items";
 import { NotificationBell } from "@/components/dashboard/notification-bell";
+import { AnalyticsView } from "@/components/dashboard/analytics-view";
 
 export function DashboardWorkspace() {
   const { invalidateSession, status: authStatus } = useAuth();
@@ -844,6 +845,7 @@ export function DashboardWorkspace() {
       />
       <TopicPlannerView active={activeTab === "planner"} />
       <LinkedInConnectionsView active={activeTab === "connections"} />
+      <AnalyticsView active={activeTab === "analytics"} />
       {researchSignal && <ResearchBriefView signal={researchSignal} onClose={() => setResearchSignal(null)} />}
     </>
   );

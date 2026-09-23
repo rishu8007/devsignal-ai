@@ -262,6 +262,10 @@ test("provider timeout is uncertain and performs no retry", async () => {
     calls += 1;
     throw new Error("timeout");
   });
+  const result = await client.publishTextPost("token", "member-123", text);
+  assert.equal(result.kind, "uncertain");
+  assert.equal(calls, 1);
+});
 
   test("scheduling validates timezone and DST, then supports reschedule and cancel", async () => {
     enablePublishing();
@@ -401,7 +405,3 @@ test("provider timeout is uncertain and performs no retry", async () => {
     assert.equal(rejected, null);
     repo.base.fencePublication = originalFence;
   });
-  const result = await client.publishTextPost("token", "member-123", text);
-  assert.equal(result.kind, "uncertain");
-  assert.equal(calls, 1);
-});

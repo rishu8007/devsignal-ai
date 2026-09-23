@@ -30,9 +30,7 @@ async def advance_workflow(
         return WorkflowResponse(
             data={
                 "status": (
-                    "awaiting_approval"
-                    if interrupt_kind == "workflow_approval"
-                    else "paused"
+                    "awaiting_approval" if interrupt_kind == "workflow_approval" else "paused"
                 ),
                 "phase": result.get("phase", interrupt_phase or "running"),
                 "state": result,

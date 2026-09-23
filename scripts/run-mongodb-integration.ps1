@@ -7,7 +7,7 @@ $uri = "mongodb://integration_root:integration_only_password@127.0.0.1:27018/dev
 docker compose -p $project -f $compose up -d --wait mongo
 try {
   $env:MONGODB_INTEGRATION_URI = $uri
-  npm run test --workspace services/api -- test/mongodb.integration.test.ts
+  npm run test:integration --workspace services/api
 }
 finally {
   docker compose -p $project -f $compose down -v

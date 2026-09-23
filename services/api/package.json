@@ -10,7 +10,8 @@
     "start": "node dist/server.js",
     "scheduler": "node dist/linkedin-scheduler-worker.js",
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test"
+    "test": "node ../../scripts/run-api-tests.mjs",
+    "test:integration": "node --import tsx --test test/mongodb.integration.test.ts"
   },
   "dependencies": {
     "bcrypt": "^6.0.0",

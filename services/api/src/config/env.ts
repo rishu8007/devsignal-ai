@@ -72,7 +72,13 @@ const pricingConfigSchema = z.array(z.object({
   embeddingPerMillionTokens: z.number().nonnegative(),
 }).strict()).max(100);
 
-const parsedEnvironment = environmentSchema.safeParse(process.env);
+// Compose uses empty defaults for optional provider settings. Treat only an
+// exact empty value as absent; preserve whitespace and private-key contents.
+const normalizedEnvironment = Object.fromEntries(
+  Object.entries(process.env).map(([key, value]) => [key, value === "" ? undefined : value]),
+);
+
+const parsedEnvironment = environmentSchema.safeParse(normalizedEnvironment);
 
 if (!parsedEnvironment.success) {
   const invalidKeys = [
@@ -93,7 +99,11 @@ if (env.AI_MODEL_PRICING_JSON) {
   }
 }
 
-if (env.LINKEDIN_ENABLED) {
+const linkedinPartiallyConfigured = Boolean(
+  env.LINKEDIN_CLIENT_ID || env.LINKEDIN_CLIENT_SECRET || env.LINKEDIN_TOKEN_ENCRYPTION_KEY,
+);
+
+if (env.LINKEDIN_ENABLED || linkedinPartiallyConfigured) {
   if (!env.LINKEDIN_CLIENT_ID || !env.LINKEDIN_CLIENT_SECRET || !env.LINKEDIN_REDIRECT_URI) {
     throw new Error("LinkedIn configuration is incomplete.");
   }
@@ -106,7 +116,16 @@ if (env.LINKEDIN_ENABLED) {
   }
 }
 
-if (env.GITHUB_ENABLED) {
+const githubPartiallyConfigured = Boolean(
+  env.GITHUB_APP_CLIENT_ID
+  || env.GITHUB_APP_CLIENT_SECRET
+  || env.GITHUB_APP_ID
+  || env.GITHUB_APP_SLUG
+  || env.GITHUB_APP_PRIVATE_KEY
+  || env.GITHUB_TOKEN_ENCRYPTION_KEY,
+);
+
+if (env.GITHUB_ENABLED || githubPartiallyConfigured) {
   if (!env.GITHUB_APP_CLIENT_ID || !env.GITHUB_APP_CLIENT_SECRET || !env.GITHUB_APP_ID || !env.GITHUB_APP_SLUG || !env.GITHUB_APP_PRIVATE_KEY || !env.GITHUB_REDIRECT_URI) {
     throw new Error("GitHub configuration is incomplete.");
   }

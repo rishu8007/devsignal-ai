@@ -3,7 +3,7 @@ import { AppError } from "../errors/app-error.js";
 import {
   aiRetrievalErrorResponseSchema,
   aiRetrievalResponseSchema,
-  type AiRetrievalCandidate,
+  type AiRetrievalCandidate, type AiRetrievalCandidates,
 } from "./retrieval.types.js";
 
 export interface AiRetrievalClient {
@@ -29,7 +29,7 @@ export class AiRetrievalServiceClient implements AiRetrievalClient {
     limit: number;
     sourceIds?: string[];
     researchOnly?: boolean;
-  }): Promise<AiRetrievalCandidate[]> {
+  }): Promise<AiRetrievalCandidates> {
     if (!this.internalApiKey) {
       throw new AppError(503, "AI_SERVICE_UNAVAILABLE", "The AI service is unavailable");
     }
@@ -66,7 +66,14 @@ export class AiRetrievalServiceClient implements AiRetrievalClient {
     if (!parsed.success || parsed.data.data.length > input.limit) {
       throw new AppError(502, "AI_INVALID_RESPONSE", "The AI service returned an invalid response");
     }
-    return parsed.data.data;
+    const candidates = parsed.data.data as AiRetrievalCandidates;
+    candidates.usage = parsed.data.usage ? {
+      model: parsed.data.usage.model,
+      inputTokens: parsed.data.usage.inputTokens ?? null,
+      outputTokens: parsed.data.usage.outputTokens ?? null,
+      embeddingTokens: parsed.data.usage.embeddingTokens ?? null,
+    } : undefined;
+    return candidates;
   }
 }
 

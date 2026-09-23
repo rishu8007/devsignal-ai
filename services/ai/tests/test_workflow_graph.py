@@ -89,14 +89,15 @@ async def _run() -> None:
             "primary_audience": "Developers & engineers",
             "content_type": "Technical insight",
             "evidence": [],
+            "research": {"topicSummary": "admitted research"},
         },
         config=config,
     )
     assert initial["__interrupt__"]
-    assert research.calls == 1
+    assert research.calls == 0
     assert generation.calls == 1
     assert review.calls == 0
-    assert events == ["research", "write"]
+    assert events == ["write"]
 
     resumed_graph = build_workflow_graph(
         research,
@@ -110,7 +111,7 @@ async def _run() -> None:
     )
     assert review_pause["__interrupt__"]
     assert review.calls == 1
-    assert events == ["research", "write", "review"]
+    assert events == ["write", "review"]
 
     approval_pause = await resumed_graph.ainvoke(
         Command(resume={"continue": True}),
@@ -122,10 +123,39 @@ async def _run() -> None:
         config=config,
     )
     assert completed["phase"] == "completed"
-    assert research.calls == 1
+    assert research.calls == 0
     assert generation.calls == 1
     assert review.calls == 1
 
 
 def test_workflow_graph_durable_interrupt_and_resume() -> None:
     asyncio.run(_run())
+
+
+def test_workflow_graph_requires_admitted_research() -> None:
+    events: list[str] = []
+    graph = build_workflow_graph(
+        FakeResearch(events),
+        FakeGeneration(events),
+        FakeReview(events),
+        InMemorySaver(),
+    )
+    try:
+        asyncio.run(
+            graph.ainvoke(
+                {
+                    "owner_id": "owner",
+                    "topic": "A valid workflow topic",
+                    "notes": "This is enough signal context for a workflow test.",
+                    "primary_audience": "Developers & engineers",
+                    "content_type": "Technical insight",
+                    "evidence": [],
+                },
+                config={"configurable": {"thread_id": "missing-research"}},
+            )
+        )
+    except ValueError as exception:
+        assert "must be admitted" in str(exception)
+    else:
+        raise AssertionError("workflow accepted missing admitted research")
+    assert events == []

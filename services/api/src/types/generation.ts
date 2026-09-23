@@ -35,6 +35,12 @@ export interface AiGenerationVariation {
 export interface AiGenerationResult {
   model: string;
   variations: AiGenerationVariation[];
+  usage?: {
+    model: string;
+    inputTokens: number | null;
+    outputTokens: number | null;
+    embeddingTokens: number | null;
+  } | undefined;
 }
 
 // Server-owned citation metadata mapped from a model-returned chunkId. Never derived

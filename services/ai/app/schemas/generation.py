@@ -3,7 +3,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StrictStr, field_validator
 
-from app.schemas.common import SuccessResponse
+from app.schemas.common import SuccessResponse, UsageMetadata
 
 Angle = Literal["technical_depth", "learning_story", "professional_impact"]
 
@@ -89,3 +89,4 @@ class ProviderGenerationOutput(BaseModel):
 class ProviderGenerationResult:
     output: ProviderGenerationOutput
     model: str
+    usage: UsageMetadata | None = None

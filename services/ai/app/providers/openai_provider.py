@@ -10,6 +10,7 @@ from openai import (
 )
 
 from app.prompts import SYSTEM_PROMPT, build_user_prompt
+from app.schemas.common import UsageMetadata
 from app.schemas.generation import (
     GenerationRequest,
     ProviderGenerationOutput,
@@ -73,7 +74,12 @@ class OpenAIProvider:
             raise ProviderError("refused")
         if response.output_parsed is None or not response.model:
             raise ProviderError("invalid_response")
-        return ProviderGenerationResult(output=response.output_parsed, model=response.model)
+        usage = _usage_metadata(response, response.model)
+        return ProviderGenerationResult(
+            output=response.output_parsed,
+            model=response.model,
+            usage=usage,
+        )
 
     async def close(self) -> None:
         await self._close_client()
@@ -85,6 +91,17 @@ def _response_refused(response: ParsedResponse) -> bool:
             if _refusal_text(content) is not None:
                 return True
     return False
+
+
+def _usage_metadata(response: ParsedResponse, model: str) -> UsageMetadata | None:
+    usage = getattr(response, "usage", None)
+    if usage is None:
+        return None
+    return UsageMetadata(
+        model=model,
+        inputTokens=getattr(usage, "input_tokens", None),
+        outputTokens=getattr(usage, "output_tokens", None),
+    )
 
 
 def _content_items(item: object) -> Sequence[object]:

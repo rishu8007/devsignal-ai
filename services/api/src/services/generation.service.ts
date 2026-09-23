@@ -33,6 +33,7 @@ import type {
   PublicGenerationDto,
   PublicSourceCitation,
 } from "../types/generation.js";
+import { admitAiOperation, completeAiOperation, markAiDispatched, markAiUncertain, releaseAiOperation } from "./usage.service.js";
 
 // This guard is process-local; distributed coordination is deferred to a later milestone.
 const inFlight = new Map<string, Promise<GenerationOperationResult>>();
@@ -323,7 +324,24 @@ async function generateAndPersist(
     }));
   }
 
-  const rawResult = await aiClient.generate(source, contextChunks);
+  const trackUsage = repository === defaultRepository;
+  const admission = trackUsage ? await admitAiOperation(ownerId, `generation:${signalId}`, "generation", clock()) : null;
+  if (admission?.duplicate) {
+    throw new AppError(409, "AI_OPERATION_IN_PROGRESS", "This AI operation is already in progress");
+  }
+  if (admission) await markAiDispatched(admission.id);
+  let rawResult: AiGenerationResult;
+  try {
+    rawResult = await aiClient.generate(source, contextChunks);
+  } catch (error) {
+    if (error instanceof AppError && [504, 502].includes(error.statusCode)) {
+      if (admission) await markAiUncertain(admission.id);
+    } else {
+      if (admission) await releaseAiOperation(admission.id);
+    }
+    throw error;
+  }
+  if (admission) await completeAiOperation(admission.id, { model: rawResult.model, ...rawResult.usage });
   const result = normalizeAiGenerationResult(rawResult, useKnowledge, candidatesByChunkId);
 
   if (leaseId && repository.beginSignalGenerationPersistence) {

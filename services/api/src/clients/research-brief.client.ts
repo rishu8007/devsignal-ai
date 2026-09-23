@@ -14,6 +14,7 @@ const responseSchema = z.object({
     questions: z.array(z.string()),
     limitations: z.array(z.string()),
   }),
+  usage: z.object({ model: z.string(), inputTokens: z.number().int().nonnegative().nullable().optional(), outputTokens: z.number().int().nonnegative().nullable().optional(), embeddingTokens: z.number().int().nonnegative().nullable().optional() }).nullable().optional(),
 });
 export type ResearchBriefEvidence = {
   evidenceId: string;
@@ -27,7 +28,7 @@ export type ResearchBriefEvidence = {
   endOffset: number;
   score: number;
 };
-export type ResearchBriefResult = z.infer<typeof responseSchema>["data"];
+export type ResearchBriefResult = z.infer<typeof responseSchema>["data"] & { usage?: { model: string; inputTokens: number | null; outputTokens: number | null; embeddingTokens: number | null } | undefined };
 export interface ResearchBriefClient { research(input: { topic: string; notes: string; evidence: ResearchBriefEvidence[] }): Promise<ResearchBriefResult>; }
 export class AiResearchBriefClient implements ResearchBriefClient {
   constructor(private readonly fetchImplementation: typeof fetch = fetch, private readonly timeoutMs = env.AI_SERVICE_TIMEOUT_MS, private readonly internalApiKey = env.AI_INTERNAL_API_KEY) {}
@@ -42,7 +43,7 @@ export class AiResearchBriefClient implements ResearchBriefClient {
     if (!response.ok) throw new AppError(response.status >= 500 ? 503 : 502, response.status === 429 ? "AI_PROVIDER_RATE_LIMITED" : "AI_SERVICE_ERROR", "The AI research request failed");
     const parsed = responseSchema.safeParse(body);
     if (!parsed.success) throw new AppError(502, "AI_INVALID_RESPONSE", "The AI service returned an invalid response");
-    return parsed.data.data;
+    return { ...parsed.data.data, usage: parsed.data.usage ? { model: parsed.data.usage.model, inputTokens: parsed.data.usage.inputTokens ?? null, outputTokens: parsed.data.usage.outputTokens ?? null, embeddingTokens: parsed.data.usage.embeddingTokens ?? null } : undefined };
   }
 }
 export const aiResearchBriefClient: ResearchBriefClient = new AiResearchBriefClient();

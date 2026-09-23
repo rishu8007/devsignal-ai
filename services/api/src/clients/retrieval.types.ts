@@ -21,6 +21,13 @@ export const aiRetrievalResponseSchema = z
   .object({
     success: z.literal(true),
     data: z.array(retrievalCandidateSchema),
+    usage: z.object({
+      model: z.string().min(1),
+      inputTokens: z.number().int().nonnegative().nullable().optional(),
+      outputTokens: z.number().int().nonnegative().nullable().optional(),
+      embeddingTokens: z.number().int().nonnegative().nullable().optional(),
+      recordedAt: z.string().datetime().nullable().optional(),
+    }).strict().nullable().optional(),
   })
   .strict();
 
@@ -32,3 +39,5 @@ export const aiRetrievalErrorResponseSchema = z
   .strict();
 
 export type AiRetrievalCandidate = z.infer<typeof retrievalCandidateSchema>;
+export type AiUsageMetadata = { model: string; inputTokens: number | null; outputTokens: number | null; embeddingTokens: number | null };
+export type AiRetrievalCandidates = AiRetrievalCandidate[] & { usage?: AiUsageMetadata | undefined };

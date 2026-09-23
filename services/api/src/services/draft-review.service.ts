@@ -8,6 +8,7 @@ import { findKnowledgeSourcesByIdsAndOwner } from "../repositories/knowledge-sou
 import { findSignalByIdAndOwner } from "../repositories/signal.repository.js";
 import { createDraftReview, findDraftReviewByIdAndOwner, findDraftReviewByRequestId, listDraftReviews, updateDraftReview } from "../repositories/draft-review.repository.js";
 import type { ApplyReviewInput, CreateReviewInput } from "../validation/draft-review.validation.js";
+import { admitAiOperation, completeAiOperation, markAiDispatched, markAiUncertain, releaseAiOperation } from "./usage.service.js";
 
 const hash = (value: string) => createHash("sha256").update(value).digest("hex");
 type Generation = Awaited<ReturnType<typeof findGenerationByOwnerAndSignal>>;
@@ -90,9 +91,15 @@ export async function createDraftReviewForUser(ownerId: string, signalId: string
     throw error;
   }
   let result;
+  const admission = repository === defaultRepository ? await admitAiOperation(ownerId, `draft-review:${input.requestId}`, "draft_review") : null;
+  if (admission?.duplicate) throw new AppError(409, "AI_OPERATION_IN_PROGRESS", "This AI operation is already in progress");
+  if (admission) await markAiDispatched(admission.id);
   try {
     result = await client.review({ draft: current.item.content, evidence: brief.evidence.map((item) => ({ evidenceId: item.evidenceId, text: item.text })) });
+    if (admission) await completeAiOperation(admission.id, result.usage);
   } catch (error) {
+    if (admission && error instanceof AppError && [502, 504].includes(error.statusCode)) await markAiUncertain(admission.id);
+    else if (admission) await releaseAiOperation(admission.id);
     await repository.update(run._id.toString(), { status: error instanceof AppError && error.statusCode === 504 ? "uncertain" : "failed", errorCode: error instanceof AppError ? error.code : "AI_SERVICE_ERROR" });
     throw error;
   }

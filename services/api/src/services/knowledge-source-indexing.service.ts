@@ -10,6 +10,7 @@ import {
 } from "../repositories/knowledge-source.repository.js";
 import type { PublicKnowledgeSourceDto } from "./knowledge-source.service.js";
 import { aiIndexingClient, type AiIndexingClient } from "../clients/indexing.client.js";
+import { admitAiOperation, aggregateProviderUsage, completeAiOperation, markAiDispatched, markAiUncertain, releaseAiOperation } from "./usage.service.js";
 
 const INDEXING_LEASE_MS = Math.max(env.AI_SERVICE_TIMEOUT_MS + 30_000, 180_000);
 
@@ -109,7 +110,16 @@ export async function indexKnowledgeSourceForUser(
     throw new AppError(409, "SOURCE_INDEXING_IN_PROGRESS", "Knowledge source indexing is in progress");
   }
 
+  let admissionId: string | undefined;
   try {
+    const admission = client === aiIndexingClient && repository === defaultRepository
+      ? await admitAiOperation(ownerId, `indexing:${sourceId}:v${claimed.contentVersion}`, "indexing", now())
+      : null;
+    if (admission?.duplicate) throw new AppError(409, "AI_OPERATION_IN_PROGRESS", "This AI operation is already in progress");
+    if (admission) {
+      await markAiDispatched(admission.id);
+      admissionId = admission.id;
+    }
     console.log(`[indexing] ${correlationId} ai-call-start`);
     const result = await client.index({
       ownerId,
@@ -147,6 +157,7 @@ export async function indexKnowledgeSourceForUser(
       null,
       metadata,
     );
+    if (admission) await completeAiOperation(admission.id, aggregateProviderUsage(result.usage) ?? { model: result.embeddingModel });
     if (!finalized) {
       const elapsedMs = Date.now() - startTime;
       console.log(`[indexing] ${correlationId} finalize-failed stale elapsed=${elapsedMs}ms`);
@@ -156,6 +167,10 @@ export async function indexKnowledgeSourceForUser(
     console.log(`[indexing] ${correlationId} success chunks=${result.indexedChunkCount} elapsed=${elapsedMs}ms`);
     return toPublicSource(finalized);
   } catch (error) {
+    if (admissionId) {
+      if (error instanceof AppError && [502, 504].includes(error.statusCode)) await markAiUncertain(admissionId);
+      else await releaseAiOperation(admissionId);
+    }
     const elapsedMs = Date.now() - startTime;
     const safeFailureCodes = new Set([
       "AI_INVALID_RESPONSE",

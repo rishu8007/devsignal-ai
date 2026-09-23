@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends
 
 from app.api.dependencies import require_internal_retrieval_service
 from app.errors import ApplicationError
+from app.schemas.common import UsageMetadata
 from app.schemas.retrieval import (
     RetrievalCandidateData,
     RetrievalRequest,
@@ -15,7 +16,7 @@ logger = logging.getLogger("devsignal-ai-service")
 router = APIRouter()
 
 
-@router.post("/retrievals", response_model=RetrievalResponse)
+@router.post("/retrievals", response_model=RetrievalResponse, response_model_exclude_none=True)
 async def create_retrieval(
     request: RetrievalRequest,
     service: RetrievalService = Depends(require_internal_retrieval_service),  # noqa: B008
@@ -26,13 +27,20 @@ async def create_retrieval(
 async def retrieve_response(
     request: RetrievalRequest, service: RetrievalService
 ) -> RetrievalResponse:
+    usage: UsageMetadata | None = None
     try:
-        if request.source_ids is None:
-            candidates = await service.retrieve(request.owner_id, request.query, request.limit)
-        else:
-            candidates = await service.retrieve(
+        if hasattr(service, "retrieve_with_usage"):
+            candidates, usage = await service.retrieve_with_usage(
                 request.owner_id, request.query, request.limit, request.source_ids
             )
+        else:
+            if request.source_ids is None:
+                candidates = await service.retrieve(request.owner_id, request.query, request.limit)
+            else:
+                candidates = await service.retrieve(
+                    request.owner_id, request.query, request.limit, request.source_ids
+                )
+            usage = None
     except ValueError as exception:
         raise ApplicationError(400, "VALIDATION_ERROR", "Invalid request data") from exception
     except RetrievalError as exception:
@@ -67,5 +75,6 @@ async def retrieve_response(
                 score=candidate.score,
             )
             for candidate in candidates
-        ]
+        ],
+        usage=usage if isinstance(usage, UsageMetadata) else None,
     )

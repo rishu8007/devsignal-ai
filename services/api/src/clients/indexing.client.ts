@@ -139,7 +139,7 @@ export class AiIndexingServiceClient implements AiIndexingClient {
       httpStatus: response.status,
       elapsedMs,
     });
-    return parsed.data.data;
+    return { ...parsed.data.data, usage: parsed.data.usage };
   }
 }
 

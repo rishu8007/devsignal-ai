@@ -7,6 +7,7 @@ import { createTopicPlanningRun, findTopicPlanningByIdAndOwner, findTopicPlannin
 import { createSignal, findSignalByPlanning } from "../repositories/signal.repository.js";
 import type { TopicConversionInput, TopicPlanningRequest } from "../validation/topic-planning.validation.js";
 import { toPublicSignalDto, type PublicSignalDto } from "./signal.service.js";
+import { admitAiOperation, completeAiOperation, markAiDispatched, markAiUncertain, releaseAiOperation } from "./usage.service.js";
 
 export interface TopicPlanningRepository {
   findSources: typeof findKnowledgeSourcesByIdsAndOwner;
@@ -89,13 +90,19 @@ export async function planTopicsForUser(ownerId: string, input: TopicPlanningReq
     throw error;
   }
   let result;
+  const admission = repository === defaultRepository ? await admitAiOperation(ownerId, `topic-planning:${input.requestId}`, "topic_planning") : null;
+  if (admission?.duplicate) throw new AppError(409, "AI_OPERATION_IN_PROGRESS", "This AI operation is already in progress");
+  if (admission) await markAiDispatched(admission.id);
   try {
     result = await client.plan({
       audience: input.audience,
       contentGoal: input.contentGoal,
       sources: sources.map((source) => ({ sourceId: source._id.toString(), contentVersion: source.contentVersion, title: source.title, text: source.content.slice(0, 4000) })),
     });
+    if (admission) await completeAiOperation(admission.id, result.usage);
   } catch (error) {
+    if (admission && error instanceof AppError && [502, 504].includes(error.statusCode)) await markAiUncertain(admission.id);
+    else if (admission) await releaseAiOperation(admission.id);
     await repository.updateRun(run._id.toString(), {
       status: error instanceof AppError && error.statusCode === 504 ? "uncertain" : "failed",
       errorCode: error instanceof AppError ? error.code : "AI_SERVICE_ERROR",

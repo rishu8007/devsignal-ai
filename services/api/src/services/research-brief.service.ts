@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { Types } from "mongoose";
 import { AppError } from "../errors/app-error.js";
+import { admitAiOperation, completeAiOperation, markAiDispatched, markAiUncertain, releaseAiOperation } from "./usage.service.js";
 import { aiResearchBriefClient, type ResearchBriefClient } from "../clients/research-brief.client.js";
 import { aiRetrievalClient, type AiRetrievalClient } from "../clients/retrieval.client.js";
 import { findKnowledgeSourcesByIdsAndOwner } from "../repositories/knowledge-source.repository.js";
@@ -100,9 +101,15 @@ export async function createResearchBriefForUser(
   }));
   if (evidence.reduce((total, item) => total + item.text.length, 0) > MAX_TOTAL_CONTEXT) evidence.splice(Math.floor(MAX_TOTAL_CONTEXT / 1000));
   let result;
+  const admission = repository === defaultRepository ? await admitAiOperation(ownerId, `research:${input.requestId}`, "research") : null;
+  if (admission?.duplicate) throw new AppError(409, "AI_OPERATION_IN_PROGRESS", "This AI operation is already in progress");
+  if (admission) await markAiDispatched(admission.id);
   try {
     result = await client.research({ topic: signal.topic, notes: signal.notes, evidence: evidence.map(({ quote: _quote, ...item }) => item) });
+    if (admission) await completeAiOperation(admission.id, result.usage);
   } catch (error) {
+    if (admission && error instanceof AppError && [502, 504].includes(error.statusCode)) await markAiUncertain(admission.id);
+    else if (admission) await releaseAiOperation(admission.id);
     await repository.updateRun(run._id.toString(), { status: error instanceof AppError && error.statusCode === 504 ? "uncertain" : "failed", errorCode: error instanceof AppError ? error.code : "AI_SERVICE_ERROR" });
     throw error;
   }

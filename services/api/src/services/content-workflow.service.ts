@@ -23,9 +23,57 @@ import {
 import { createDraftReview, findDraftReviewByIdAndOwner, findDraftReviewByRequestId } from "../repositories/draft-review.repository.js";
 import type { ApprovalInput, StartWorkflowInput } from "../validation/content-workflow.validation.js";
 import type { GenerationAngle } from "../types/generation.js";
+import {
+  admitAiOperation,
+  completeAiOperation,
+  markAiDispatched,
+  markAiUncertain,
+  releaseAiOperation,
+  type UsageRepositoryBoundary,
+} from "./usage.service.js";
 
 const hash = (value: string) => createHash("sha256").update(value).digest("hex");
 const leaseDurationMs = 90_000;
+
+export async function advanceWorkflowProviderStep(
+  ownerId: string,
+  workflowId: string,
+  step: "generation" | "draft_review",
+  input: Record<string, unknown>,
+  client: ContentWorkflowClient,
+  usageRepository?: UsageRepositoryBoundary,
+) {
+  const operationKey = `workflow:${workflowId}:${step}`;
+  const admission = await admitAiOperation(
+    ownerId,
+    operationKey,
+    step,
+    new Date(),
+    usageRepository,
+  );
+  if (admission.duplicate) {
+    throw new AppError(409, "AI_OPERATION_IN_PROGRESS", "This workflow AI step is already in progress");
+  }
+  await markAiDispatched(admission.id, new Date(), usageRepository);
+  let result: Awaited<ReturnType<ContentWorkflowClient["advance"]>>;
+  try {
+    result = await client.advance(input);
+  } catch (error) {
+    if (error instanceof AppError && [502, 504].includes(error.statusCode)) {
+      await markAiUncertain(admission.id, usageRepository);
+    } else {
+      await releaseAiOperation(admission.id, usageRepository);
+    }
+    throw error;
+  }
+  const usage = result.usage ?? (
+    step === "generation"
+      ? (result.state.generation as { usage?: unknown } | undefined)?.usage
+      : (result.state.review as { usage?: unknown } | undefined)?.usage
+  );
+  await completeAiOperation(admission.id, usage as Parameters<typeof completeAiOperation>[1], usageRepository);
+  return result;
+}
 
 export function workflowReviewRequestId(
   ownerId: string,
@@ -406,12 +454,28 @@ async function advanceClaimedWorkflow(run: NonNullable<Awaited<ReturnType<typeof
     research,
     resume: false,
   };
-  let result = await client.advance(graphInput);
+  let result = run.generationOutput
+    ? await client.advance(graphInput)
+    : await advanceWorkflowProviderStep(
+      run.ownerId.toString(),
+      run._id.toString(),
+      "generation",
+      graphInput,
+      client,
+    );
   if (!(await persistWorkflowGraphState(run, result))) return null;
   while (isWorkflowStepInterrupt(result.interrupt)) {
     const betweenSteps = await findContentWorkflowByIdAndOwner(run.ownerId.toString(), run._id.toString());
     if (!betweenSteps || betweenSteps.status !== "running" || betweenSteps.leaseId !== run.leaseId) return null;
-    result = await client.advance({ ...graphInput, resume: true });
+    result = run.reviewOutput
+      ? await client.advance({ ...graphInput, resume: true })
+      : await advanceWorkflowProviderStep(
+        run.ownerId.toString(),
+        run._id.toString(),
+        "draft_review",
+        { ...graphInput, resume: true },
+        client,
+      );
     if (!(await persistWorkflowGraphState(run, result))) return null;
   }
   const state = result.state as Record<string, any>;

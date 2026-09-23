@@ -7,9 +7,13 @@ from app.schemas.draft_review import DraftReviewRequest, DraftReviewResponse
 router = APIRouter()
 
 
-@router.post("/draft-reviews", response_model=DraftReviewResponse)
+@router.post("/draft-reviews", response_model=DraftReviewResponse, response_model_exclude_none=True)
 async def create_draft_review(
     request: DraftReviewRequest,
     provider: DraftReviewProvider = Depends(require_internal_draft_review_provider),  # noqa: B008
 ) -> DraftReviewResponse:
-    return DraftReviewResponse(data=await provider.review(request))
+    if hasattr(provider, "review_with_usage"):
+        data, usage = await provider.review_with_usage(request)
+    else:
+        data, usage = await provider.review(request), None
+    return DraftReviewResponse(data=data, usage=usage)

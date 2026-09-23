@@ -95,6 +95,12 @@ export class AiServiceClient implements AiGenerationClient {
 
     return {
       model: parsed.data.data.model,
+      usage: parsed.data.usage ? {
+        model: parsed.data.usage.model,
+        inputTokens: parsed.data.usage.inputTokens ?? null,
+        outputTokens: parsed.data.usage.outputTokens ?? null,
+        embeddingTokens: parsed.data.usage.embeddingTokens ?? null,
+      } : undefined,
       variations: GENERATION_ANGLES.map((angle) => {
         const variation = byAngle.get(angle);
         if (!variation) {

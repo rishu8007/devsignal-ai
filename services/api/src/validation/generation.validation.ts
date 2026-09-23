@@ -68,6 +68,13 @@ export const aiGenerationResponseSchema = z
         )
         .length(3),
     }).strict(),
+    usage: z.object({
+      model: z.string().min(1),
+      inputTokens: z.number().int().nonnegative().nullable().optional(),
+      outputTokens: z.number().int().nonnegative().nullable().optional(),
+      embeddingTokens: z.number().int().nonnegative().nullable().optional(),
+      recordedAt: z.string().datetime().nullable().optional(),
+    }).strict().nullable().optional(),
   })
   .strict();
 

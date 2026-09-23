@@ -12,6 +12,7 @@ import { startLinkedInSchedulerWorker } from "./services/linkedin-publication.se
 import { startNotificationReconciliationWorker } from "./services/notification.service.js";
 import { ensureNotificationIndexes } from "./repositories/notification.repository.js";
 import { ensureAnalyticsIndexes } from "./repositories/analytics.repository.js";
+import { ensureUsageIndexes } from "./repositories/usage.repository.js";
 
 let server: Server | undefined;
 let stopWorkflowWorker: (() => void) | undefined;
@@ -67,6 +68,7 @@ async function startServer(): Promise<void> {
     await ensureLinkedInIndexes();
     await ensureNotificationIndexes();
     await ensureAnalyticsIndexes();
+    await ensureUsageIndexes();
   } catch {
     console.error("Database connection failed; the API server was not started.");
     process.exitCode = 1;

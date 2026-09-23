@@ -19,6 +19,7 @@ import { linkedinRouter } from "./routes/linkedin.routes.js";
 import { linkedinPublicationRouter } from "./routes/linkedin-publication.routes.js";
 import { notificationRouter } from "./routes/notification.routes.js";
 import { analyticsRouter } from "./routes/analytics.routes.js";
+import { usageRouter } from "./routes/usage.routes.js";
 
 export const app = express();
 
@@ -48,5 +49,6 @@ app.use("/api/v1/connections", linkedinRouter);
 app.use("/api/v1/publications/linkedin", linkedinPublicationRouter);
 app.use("/api/v1/notifications", notificationRouter);
 app.use("/api/v1/analytics", analyticsRouter);
+app.use("/api/v1/usage", usageRouter);
 app.use(notFoundMiddleware);
 app.use(errorMiddleware);

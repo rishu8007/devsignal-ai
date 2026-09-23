@@ -34,6 +34,10 @@ const environmentSchema = z.object({
     .default("http://127.0.0.1:8000"),
   AI_INTERNAL_API_KEY: z.string().min(32).optional(),
   AI_SERVICE_TIMEOUT_MS: z.coerce.number().int().min(1000).max(300000).default(150000),
+  AI_DAILY_OPERATION_LIMIT: z.coerce.number().int().min(1).max(100000).default(100),
+  AI_APPLICATION_DAILY_OPERATION_LIMIT: z.coerce.number().int().min(1).max(1000000).default(10000),
+  AI_USAGE_FAIL_CLOSED: z.enum(["true", "false"]).default("true").transform((value) => value === "true"),
+  AI_MODEL_PRICING_JSON: z.string().default(""),
   LINKEDIN_ENABLED: z.enum(["true", "false"]).default("false").transform((value) => value === "true"),
   LINKEDIN_CLIENT_ID: z.string().trim().min(1).optional(),
   LINKEDIN_CLIENT_SECRET: z.string().min(1).optional(),
@@ -47,6 +51,14 @@ const environmentSchema = z.object({
   LINKEDIN_SCHEDULE_HORIZON_DAYS: z.coerce.number().int().min(1).max(365).default(90),
   LINKEDIN_SCHEDULE_LATE_WINDOW_MINUTES: z.coerce.number().int().min(1).max(1440).default(60),
 });
+const pricingConfigSchema = z.array(z.object({
+  model: z.string().min(1),
+  currency: z.string().regex(/^[A-Z]{3}$/),
+  effectiveDate: z.string().datetime(),
+  inputPerMillionTokens: z.number().nonnegative(),
+  outputPerMillionTokens: z.number().nonnegative(),
+  embeddingPerMillionTokens: z.number().nonnegative(),
+}).strict()).max(100);
 
 const parsedEnvironment = environmentSchema.safeParse(process.env);
 
@@ -59,6 +71,15 @@ if (!parsedEnvironment.success) {
 }
 
 export const env = parsedEnvironment.data;
+
+if (env.AI_MODEL_PRICING_JSON) {
+  const pricing = (() => {
+    try { return JSON.parse(env.AI_MODEL_PRICING_JSON) as unknown; } catch { return null; }
+  })();
+  if (!pricingConfigSchema.safeParse(pricing).success) {
+    throw new Error("AI_MODEL_PRICING_JSON is invalid.");
+  }
+}
 
 if (env.LINKEDIN_ENABLED) {
   if (!env.LINKEDIN_CLIENT_ID || !env.LINKEDIN_CLIENT_SECRET || !env.LINKEDIN_REDIRECT_URI) {

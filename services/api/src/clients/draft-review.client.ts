@@ -18,8 +18,9 @@ const responseSchema = z.object({
     findings: z.array(findingSchema).max(12),
     proposedDraft: z.string().max(3000).nullable(),
   }),
+  usage: z.object({ model: z.string(), inputTokens: z.number().int().nonnegative().nullable().optional(), outputTokens: z.number().int().nonnegative().nullable().optional(), embeddingTokens: z.number().int().nonnegative().nullable().optional() }).nullable().optional(),
 });
-export type DraftReviewResult = z.infer<typeof responseSchema>["data"];
+export type DraftReviewResult = z.infer<typeof responseSchema>["data"] & { usage?: { model: string; inputTokens: number | null; outputTokens: number | null; embeddingTokens: number | null } | undefined };
 export interface DraftReviewClient {
   review(input: { draft: string; evidence: Array<{ evidenceId: string; text: string }> }): Promise<DraftReviewResult>;
 }
@@ -48,7 +49,7 @@ export class AiDraftReviewClient implements DraftReviewClient {
     if (!response.ok) throw new AppError(response.status >= 500 ? 503 : 502, response.status === 429 ? "AI_PROVIDER_RATE_LIMITED" : "AI_SERVICE_ERROR", "The AI review request failed");
     const parsed = responseSchema.safeParse(body);
     if (!parsed.success) throw new AppError(502, "AI_INVALID_RESPONSE", "The AI service returned an invalid response");
-    return parsed.data.data;
+    return { ...parsed.data.data, usage: parsed.data.usage ? { model: parsed.data.usage.model, inputTokens: parsed.data.usage.inputTokens ?? null, outputTokens: parsed.data.usage.outputTokens ?? null, embeddingTokens: parsed.data.usage.embeddingTokens ?? null } : undefined };
   }
 }
 export const aiDraftReviewClient: DraftReviewClient = new AiDraftReviewClient();

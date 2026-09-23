@@ -4,6 +4,7 @@ from typing import Protocol
 from pydantic import BaseModel
 
 from app.providers.openai_provider import ProviderError
+from app.schemas.common import UsageMetadata
 from app.schemas.research_brief import ResearchBriefData, ResearchBriefRequest
 
 
@@ -27,6 +28,12 @@ class ResearchBriefProvider:
         self.responses, self.close_client, self.model = responses, close_client, model
 
     async def research(self, request: ResearchBriefRequest) -> ResearchBriefData:
+        output, _ = await self.research_with_usage(request)
+        return output
+
+    async def research_with_usage(
+        self, request: ResearchBriefRequest
+    ) -> tuple[ResearchBriefData, UsageMetadata | None]:
         try:
             result = await self.responses.parse(
                 model=self.model,
@@ -52,7 +59,17 @@ class ResearchBriefProvider:
         output = getattr(result, "output_parsed", None)
         if not isinstance(output, ResearchBriefData):
             raise ProviderError("invalid_response")
-        return output
+        usage = getattr(result, "usage", None)
+        usage_metadata = (
+            UsageMetadata(
+                model=self.model,
+                inputTokens=getattr(usage, "input_tokens", None),
+                outputTokens=getattr(usage, "output_tokens", None),
+            )
+            if usage is not None
+            else None
+        )
+        return output, usage_metadata
 
     async def close(self) -> None:
         await self.close_client()

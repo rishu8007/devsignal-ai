@@ -8,7 +8,6 @@ from app.providers.openai_provider import OpenAIProvider
 from app.providers.research_brief_provider import ResearchBriefProvider
 from app.schemas.draft_review import DraftReviewRequest
 from app.schemas.generation import GenerationRequest
-from app.schemas.research_brief import ResearchBriefRequest
 
 
 class WorkflowState(TypedDict, total=False):
@@ -33,18 +32,9 @@ def build_workflow_graph(
     checkpointer: Any,
 ) -> Any:
     async def research_node(state: WorkflowState) -> dict[str, Any]:
-        if state.get("research"):
-            return {"phase": "research_complete"}
-        result = await research_provider.research(
-            ResearchBriefRequest.model_validate(
-                {
-                    "topic": state["topic"],
-                    "notes": state["notes"],
-                    "evidence": state.get("evidence", []),
-                }
-            )
-        )
-        return {"research": result.model_dump(by_alias=True), "phase": "research_complete"}
+        if not state.get("research"):
+            raise ValueError("workflow research must be admitted and supplied by the API")
+        return {"phase": "research_complete"}
 
     async def write_node(state: WorkflowState) -> dict[str, Any]:
         if state.get("generation"):
@@ -67,6 +57,9 @@ def build_workflow_graph(
             "generation": {
                 "model": result.model,
                 "variations": [item.model_dump() for item in result.output.variations],
+                "usage": (
+                    result.usage.model_dump(by_alias=True) if result.usage is not None else None
+                ),
             },
             "phase": "write_complete",
         }
@@ -79,18 +72,34 @@ def build_workflow_graph(
             (item["content"] for item in variations if item["angle"] == "technical_depth"),
             variations[0]["content"],
         )
-        result = await review_provider.review(
-            DraftReviewRequest.model_validate(
-                {
-                    "draft": draft,
-                    "evidence": [
-                        {"evidenceId": item["evidenceId"], "text": item["text"]}
-                        for item in state.get("evidence", [])
-                    ],
-                }
+        usage = None
+        if hasattr(review_provider, "review_with_usage"):
+            result, usage = await review_provider.review_with_usage(
+                DraftReviewRequest.model_validate(
+                    {
+                        "draft": draft,
+                        "evidence": [
+                            {"evidenceId": item["evidenceId"], "text": item["text"]}
+                            for item in state.get("evidence", [])
+                        ],
+                    }
+                )
             )
-        )
-        return {"review": result.model_dump(by_alias=True), "phase": "review_complete"}
+        else:
+            result = await review_provider.review(
+                DraftReviewRequest.model_validate(
+                    {
+                        "draft": draft,
+                        "evidence": [
+                            {"evidenceId": item["evidenceId"], "text": item["text"]}
+                            for item in state.get("evidence", [])
+                        ],
+                    }
+                )
+            )
+        review = result.model_dump(by_alias=True)
+        review["usage"] = usage
+        return {"review": review, "phase": "review_complete"}
 
     def step_boundary(state: WorkflowState) -> dict[str, Any]:
         interrupt(

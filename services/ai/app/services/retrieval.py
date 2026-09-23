@@ -16,6 +16,7 @@ from app.repositories.qdrant_repository import (
     ChunkSearchResult,
     QdrantRepositoryError,
 )
+from app.schemas.common import UsageMetadata
 from app.services.source_indexing import EmbeddingClient, EmbeddingConfiguration
 
 MAX_RETRIEVAL_RESULT_COUNT = 20
@@ -77,12 +78,25 @@ class RetrievalService:
         limit: int,
         source_ids: Sequence[str] | None = None,
     ) -> list[RetrievalCandidate]:
+        results, _ = await self.retrieve_with_usage(owner_id, query, limit, source_ids)
+        return results
+
+    async def retrieve_with_usage(
+        self,
+        owner_id: str,
+        query: str,
+        limit: int,
+        source_ids: Sequence[str] | None = None,
+    ) -> tuple[list[RetrievalCandidate], UsageMetadata | None]:
         normalized_owner_id = _validate_owner_id(owner_id)
         _validate_query(query)
         _validate_limit(limit, self._max_result_count)
-
         try:
-            vectors = await self._embedding_provider.embed([query])
+            if hasattr(self._embedding_provider, "embed_with_usage"):
+                vectors, usage = await self._embedding_provider.embed_with_usage([query])
+            else:
+                vectors = await self._embedding_provider.embed([query])
+                usage = None
         except EmbeddingProviderError as exception:
             raise RetrievalError(exception.kind) from exception
         except (TypeError, ValueError) as exception:
@@ -106,7 +120,7 @@ class RetrievalService:
             normalized_owner_id,
             self._embedding_configuration,
             limit,
-        )
+        ), usage
 
 
 def _validate_owner_id(owner_id: object) -> str:

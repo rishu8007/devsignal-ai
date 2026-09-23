@@ -2,7 +2,13 @@ import { env } from "../config/env.js";
 import { AppError } from "../errors/app-error.js";
 import { z } from "zod";
 
-const responseSchema = z.object({ success: z.literal(true), data: z.object({ status: z.string(), phase: z.string(), state: z.record(z.string(), z.unknown()), interrupt: z.unknown().optional() }) });
+const usageSchema = z.object({
+  model: z.string(),
+  inputTokens: z.number().int().nonnegative().nullable().optional(),
+  outputTokens: z.number().int().nonnegative().nullable().optional(),
+  embeddingTokens: z.number().int().nonnegative().nullable().optional(),
+});
+const responseSchema = z.object({ success: z.literal(true), data: z.object({ status: z.string(), phase: z.string(), state: z.record(z.string(), z.unknown()), interrupt: z.unknown().optional(), usage: usageSchema.nullable().optional() }) });
 export type WorkflowAiResult = z.infer<typeof responseSchema>["data"];
 export interface ContentWorkflowClient {
   advance(input: Record<string, unknown>): Promise<WorkflowAiResult>;

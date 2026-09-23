@@ -1,9 +1,10 @@
 import { Types } from "mongoose";
 import { aiRetrievalClient, type AiRetrievalClient } from "../clients/retrieval.client.js";
-import type { AiRetrievalCandidate } from "../clients/retrieval.types.js";
+import type { AiRetrievalCandidate, AiRetrievalCandidates } from "../clients/retrieval.types.js";
 import { AppError } from "../errors/app-error.js";
 import type { KnowledgeSourceDocument } from "../models/knowledge-source.model.js";
 import { findKnowledgeSourcesByIdsAndOwner } from "../repositories/knowledge-source.repository.js";
+import { admitAiOperation, completeAiOperation, markAiDispatched, markAiUncertain, releaseAiOperation } from "./usage.service.js";
 
 export interface PublicRetrievalCandidate {
   sourceId: string;
@@ -33,7 +34,21 @@ export async function searchKnowledgeSourcesForUser(
   if (!Types.ObjectId.isValid(ownerId)) {
     throw new AppError(401, "AUTHENTICATION_REQUIRED", "Authentication is required");
   }
-  const candidates = await client.retrieve({ ownerId, query, limit });
+  const trackUsage = client === aiRetrievalClient && repository === defaultRepository;
+  const admission = trackUsage ? await admitAiOperation(ownerId, `retrieval:${Buffer.from(query).toString("base64url")}:${limit}`, "retrieval") : null;
+  if (admission?.duplicate) {
+    throw new AppError(409, "AI_OPERATION_IN_PROGRESS", "This AI operation is already in progress");
+  }
+  if (admission) await markAiDispatched(admission.id);
+  let candidates: AiRetrievalCandidate[];
+  try {
+    candidates = await client.retrieve({ ownerId, query, limit });
+    if (admission) await completeAiOperation(admission.id, (candidates as AiRetrievalCandidates).usage);
+  } catch (error) {
+    if (admission && error instanceof AppError && [502, 504].includes(error.statusCode)) await markAiUncertain(admission.id);
+    else if (admission) await releaseAiOperation(admission.id);
+    throw error;
+  }
   const sourceIds = [...new Set(candidates.map((candidate) => candidate.sourceId.toLowerCase()))];
   const sources = await repository.findKnowledgeSourcesByIdsAndOwner(ownerId, sourceIds);
   const byId = new Map(sources.map((source) => [source._id.toString().toLowerCase(), source]));

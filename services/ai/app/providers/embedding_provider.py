@@ -12,6 +12,8 @@ from openai import (
     RateLimitError,
 )
 
+from app.schemas.common import UsageMetadata
+
 EMBEDDING_MODEL = "text-embedding-3-small"
 EMBEDDING_DIMENSIONS = 1536
 MAX_EMBEDDING_BATCH_SIZE = 64
@@ -61,6 +63,12 @@ class OpenAIEmbeddingProvider:
         self._dimensions = dimensions
 
     async def embed(self, texts: Sequence[str]) -> list[list[float]]:
+        vectors, _ = await self.embed_with_usage(texts)
+        return vectors
+
+    async def embed_with_usage(
+        self, texts: Sequence[str]
+    ) -> tuple[list[list[float]], UsageMetadata | None]:
         input_texts = list(texts)
         _validate_input_texts(input_texts)
 
@@ -80,7 +88,16 @@ class OpenAIEmbeddingProvider:
         except (APIConnectionError, APIStatusError) as exception:
             raise EmbeddingProviderError("provider") from exception
 
-        return _validate_response(response, len(input_texts), self._dimensions)
+        raw_usage = getattr(response, "usage", None)
+        usage = (
+            UsageMetadata(
+                model=self._model,
+                embeddingTokens=getattr(raw_usage, "prompt_tokens", None),
+            )
+            if raw_usage is not None
+            else None
+        )
+        return _validate_response(response, len(input_texts), self._dimensions), usage
 
 
 def _validate_input_texts(texts: list[str]) -> None:

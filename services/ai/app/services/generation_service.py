@@ -3,6 +3,7 @@ from collections.abc import Sequence
 from app.errors import ApplicationError
 from app.providers.openai_provider import ProviderError
 from app.providers.protocol import GenerationProvider
+from app.schemas.common import UsageMetadata
 from app.schemas.generation import (
     Angle,
     GenerationData,
@@ -20,6 +21,13 @@ REQUIRED_ANGLES: tuple[Angle, ...] = (
 async def generate_posts(
     provider: GenerationProvider, request: GenerationRequest
 ) -> GenerationData:
+    data, _ = await generate_posts_with_usage(provider, request)
+    return data
+
+
+async def generate_posts_with_usage(
+    provider: GenerationProvider, request: GenerationRequest
+) -> tuple[GenerationData, UsageMetadata | None]:
     try:
         result = await provider.generate(request)
         variations = _normalize_variations(result.output.variations)
@@ -54,7 +62,7 @@ async def generate_posts(
             "AI_INVALID_RESPONSE",
             "The AI provider returned an invalid response",
         ) from exception
-    return GenerationData(variations=variations, model=result.model)
+    return GenerationData(variations=variations, model=result.model), result.usage
 
 
 def _normalize_variations(

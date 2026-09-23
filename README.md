@@ -167,12 +167,48 @@ dashboard labels all entries “Manually entered”; there is no LinkedIn scrapi
 analytics API request, or additional OAuth permission. Analytics aggregation
 and live MongoDB concurrency/browser verification remain deferred checks.
 
+### AI usage and quotas
+
+AI provider work is admitted through the persisted `/api/v1/usage` quota
+window. One operation unit is charged for each new draft generation, topic
+plan, research brief, technical review, Knowledge indexing attempt, and
+retrieval query. Existing persisted results and completed workflow steps do
+not create a new admission; workflow steps use the same underlying operation
+identity as their direct service. Quota windows are UTC calendar days and
+report the next reset time. The default owner limit is 100 operations per day
+and the application safeguard is 10,000; both are configurable with
+`AI_DAILY_OPERATION_LIMIT` and `AI_APPLICATION_DAILY_OPERATION_LIMIT`.
+
+Reservations are persisted with unique owner/window/operation identities.
+Known failures before provider dispatch release a reservation; dispatched
+operations are completed or marked uncertain and are never automatically
+refunded or replayed. Per-owner and application reservations are separate
+documents for standalone MongoDB compatibility, so recovery is conservative
+and does not claim cross-document atomicity. Admission fails closed when
+usage storage is unavailable (`AI_USAGE_FAIL_CLOSED=true`).
+
+Provider token metadata is optional. The Usage view distinguishes known and
+missing input/output/embedding usage. Optional model pricing is supplied via
+`AI_MODEL_PRICING_JSON`; displayed costs are labeled **Estimated**, are not a
+monetary quota, and remain unavailable without both pricing and provider
+usage. Provider retries whose usage cannot be observed are documented as
+missing rather than fabricated. No provider calls, publishing actions, or
+automatic retries occur when a quota is exhausted.
+Provider usage is returned with each provider result rather than read from
+shared mutable provider state; concurrent requests cannot inherit another
+request's token counts. Indexing aggregates usage per embedding operation, and
+workflow checkpoints store usage with the exact generation or review node result.
+
 ## Signal content workflow
 
 The dashboard can start a bounded, persisted workflow from a saved Signal
 after the user explicitly selects current indexed Knowledge sources. The
 workflow reuses the existing research, generation, and technical-review
-services, then pauses at a durable LangGraph human-approval interrupt. The
+services, then pauses at a durable LangGraph human-approval interrupt. Research
+must already be admitted and supplied by the API; the graph rejects an initial
+invocation without that persisted research instead of calling a fallback
+provider. Generation and review graph calls each have their own persisted quota
+operation identity and admission immediately before dispatch. The
 Express `ContentWorkflow` record is authoritative for user-visible status and
 links to the saved research brief, generation, and review; the LangGraph
 checkpoint stores execution and resume position using the persisted thread ID.

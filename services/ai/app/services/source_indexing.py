@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, StrictInt, StrictStr, field_validator
@@ -18,6 +18,7 @@ from app.repositories.qdrant_repository import (
     ChunkVectorRecord,
     QdrantRepositoryError,
 )
+from app.schemas.common import UsageMetadata
 from app.services.chunking import ChunkingInput, TextChunk, chunk_text
 
 
@@ -97,6 +98,7 @@ class SourceIndexingResult:
     embedding_model: str
     dimensions: int
     indexed_chunk_count: int
+    usage: list[UsageMetadata] = field(default_factory=list)
 
 
 class SourceIndexingError(Exception):
@@ -148,6 +150,7 @@ class SourceIndexingService:
             raise SourceIndexingError(exception.kind) from exception
 
         vectors: list[list[float]] = []
+        usage: list[UsageMetadata] = []
         total_batches = 0
         for batch in _batches(chunks, self._embedding_configuration):
             total_batches += 1
@@ -156,9 +159,17 @@ class SourceIndexingService:
                     f"[indexing] {correlation_id} embedding-start "
                     f"batch={total_batches} size={len(batch)}"
                 )
-                batch_vectors = await self._embedding_provider.embed(
-                    [chunk.text for chunk in batch]
-                )
+                if hasattr(self._embedding_provider, "embed_with_usage"):
+                    batch_vectors, provider_usage = await self._embedding_provider.embed_with_usage(
+                        [chunk.text for chunk in batch]
+                    )
+                else:
+                    batch_vectors = await self._embedding_provider.embed(
+                        [chunk.text for chunk in batch]
+                    )
+                    provider_usage = None
+                if provider_usage is not None:
+                    usage.append(provider_usage)
                 logger.info(
                     f"[indexing] {correlation_id} embedding-success "
                     f"batch={total_batches} count={len(batch_vectors)}"
@@ -213,6 +224,7 @@ class SourceIndexingService:
             embedding_model=self._embedding_configuration.model,
             dimensions=self._embedding_configuration.dimensions,
             indexed_chunk_count=len(chunks),
+            usage=usage,
         )
 
 

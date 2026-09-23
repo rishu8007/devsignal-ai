@@ -11,7 +11,7 @@ logger = logging.getLogger("devsignal-ai-service")
 router = APIRouter()
 
 
-@router.post("/indexings", response_model=IndexingResponse)
+@router.post("/indexings", response_model=IndexingResponse, response_model_exclude_none=True)
 async def create_indexing(
     request: IndexingRequest,
     service: SourceIndexingService = Depends(require_internal_indexing_service),  # noqa: B008
@@ -49,4 +49,4 @@ async def create_indexing(
         dimensions=result.dimensions,
         indexedChunkCount=result.indexed_chunk_count,
     )
-    return IndexingResponse(data=data)
+    return IndexingResponse(data=data, usage=list(result.usage) or None)

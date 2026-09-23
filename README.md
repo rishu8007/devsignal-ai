@@ -285,9 +285,10 @@ screenshots and traces remain under ignored
 `apps\web\test-results-integration\` output on failure. The suite currently
 covers real registration/login, signal persistence, three deterministic draft
 variations, approval persistence, calendar navigation, and usage display.
-The broader research, workflow, LinkedIn, analytics, notifications, and
-knowledge-import journeys remain covered by focused API or UI-boundary tests,
-not this real-service browser suite.
+It also covers notification read-state and owner isolation, analytics snapshot
+CRUD and weighted-rate coverage, local text knowledge import cancellation/save,
+and logout/account isolation. Research, workflow, and LinkedIn publishing
+browser journeys remain separate milestones.
 
 ## Architecture
 

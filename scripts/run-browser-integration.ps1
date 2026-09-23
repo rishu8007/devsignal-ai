@@ -25,6 +25,7 @@ try {
   $env:LINKEDIN_PUBLISHING_ENABLED = "false"
   $env:LINKEDIN_SCHEDULER_ENABLED = "false"
   $env:BROWSER_AI_PORT = "8100"
+  node --import tsx scripts/seed-browser-integration.ts
   $aiProcess = Start-Process -FilePath "node" -ArgumentList "scripts/browser-integration-ai.mjs" -PassThru -NoNewWindow
   $aiPid = $aiProcess.Id
   $apiProcess = Start-Process -FilePath "npm.cmd" -ArgumentList "run", "start", "--workspace", "services/api" -PassThru -NoNewWindow

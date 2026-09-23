@@ -4,6 +4,7 @@ const port = Number(process.env.WEB_TEST_PORT ?? 3200);
 
 export default defineConfig({
   testDir: "./test/browser-integration",
+  workers: 1,
   timeout: 45_000,
   expect: { timeout: 10_000 },
   reporter: [["list"], ["html", { open: "never" }]],

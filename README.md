@@ -338,6 +338,14 @@ claim to exercise Python LangGraph or checkpointer restart durability.
 The runner's increased login limit is guarded by both `NODE_ENV=test` and
 `BROWSER_INTEGRATION=true`, so it cannot activate in production.
 
+Draft review feedback is an advisory assessment of the selected generation
+variation. The UI derives its optional “draft-quality heuristic” deterministically
+from validated review findings and basic LinkedIn formatting checks; it is not a
+prediction of engagement and never approves or publishes a draft. A review is
+bound to the variation's content hash and current research evidence. If the
+draft or evidence changes, feedback is shown as outdated or “Not assessed”
+until the existing review action is run again.
+
 ## Architecture
 
 | Area | Location | Responsibility |

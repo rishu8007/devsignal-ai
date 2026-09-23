@@ -124,7 +124,14 @@ export async function createDraftReviewForUser(ownerId: string, signalId: string
 export async function listDraftReviewsForUser(ownerId: string, signalId: string, variationId: string, repository = defaultRepository) {
   validOwner(ownerId);
   await findRequiredSignal(ownerId, signalId, repository);
-  return (await repository.list(ownerId, signalId, variationId)).map((review) => publicReview(review));
+  const reviews = await repository.list(ownerId, signalId, variationId);
+  const current = await repository.findGeneration(ownerId, signalId);
+  const currentContent = current?.variations.find((item) => item._id.toString() === variationId)?.content;
+  return Promise.all(reviews.map(async (review) => {
+    const stale = currentContent === undefined || currentContent !== review.draftContent;
+    if (stale !== review.stale) await repository.update(review._id.toString(), { stale });
+    return publicReview(stale === review.stale ? review : { ...review, stale });
+  }));
 }
 export async function getDraftReviewForUser(ownerId: string, signalId: string, variationId: string, reviewId: string, repository = defaultRepository) {
   validOwner(ownerId);

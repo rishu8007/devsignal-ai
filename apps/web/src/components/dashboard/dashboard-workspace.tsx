@@ -766,6 +766,7 @@ export function DashboardWorkspace() {
             <DraftReviewPanel
               signalId={selectedSignal.id}
               variationId={reviewTarget.variationId}
+              currentContent={generation.variations.find((variation) => variation.id === reviewTarget.variationId)?.content ?? ""}
               onClose={() => setReviewTarget(null)}
               onCreateResearch={() => {
                 setResearchSignal(selectedSignal);

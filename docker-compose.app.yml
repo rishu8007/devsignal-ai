@@ -83,7 +83,7 @@ services:
     profiles: ["github-sync"]
     extends:
       service: api
-    command: ["node", "dist/github-sync-worker.js"]
+    command: ["node", "services/api/dist/github-sync-worker.js"]
     ports: []
     restart: unless-stopped
 

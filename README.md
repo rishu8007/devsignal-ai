@@ -598,6 +598,41 @@ docker compose -p devsignal-https -f docker-compose.deploy.yml --env-file .env.d
 docker compose -p devsignal-https -f docker-compose.deploy.yml --env-file .env.deploy ps
 ```
 
+The deployment file passes the optional LinkedIn and GitHub App settings
+through to the API. Leave each integration disabled with blank credentials
+when it is not configured; the API and dashboard still start and show the
+provider as not configured. Provider authorization, publishing, and sync
+remain unavailable until the corresponding complete configuration passes API
+validation. `LINKEDIN_PUBLISHING_ENABLED` and `LINKEDIN_SCHEDULER_ENABLED`
+default to false. The API process deliberately keeps the scheduler disabled;
+run exactly one scheduler instance only when the separate profile is enabled:
+
+```powershell
+docker compose -p devsignal-https -f docker-compose.deploy.yml --env-file .env.deploy --profile linkedin-scheduler up -d linkedin-scheduler
+```
+
+GitHub synchronization is also opt-in and runs as a separate service using
+the API image and worker entrypoint. Enable `GITHUB_SYNC_ENABLED=true` only
+when the GitHub App settings are complete, then start one worker instance:
+
+```powershell
+docker compose -p devsignal-https -f docker-compose.deploy.yml --env-file .env.deploy --profile github-sync up -d github-sync
+```
+
+Do not run multiple LinkedIn scheduler instances. The scheduler uses persisted
+claims, but this deployment configuration does not provide a multi-instance
+coordination policy beyond those claims. The GitHub worker has persisted
+connection claims and is likewise intended to run as one deployment service.
+
+The AI service is wired to the private MongoDB service with
+`WORKFLOW_CHECKPOINT_DATABASE=devsignal_workflows`. The LangGraph MongoDB
+checkpointer currently creates/uses the `checkpoints` and
+`checkpoint_writes` collections in that database. The existing backup workflow
+only dumps the `devsignal` application database and the Qdrant collection; it
+does not include `devsignal_workflows` or its checkpoint collections. Extend
+the backup and restore procedure, and verify it with an isolated rehearsal,
+before enabling durable production workflows.
+
 The public origin and `PUBLIC_DOMAIN` must match. The browser API base is
 `/api/v1`, so it is same-origin and is embedded in the web image at build
 time. Changing it or other `NEXT_PUBLIC_*` values requires rebuilding the web

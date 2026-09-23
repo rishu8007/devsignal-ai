@@ -100,7 +100,10 @@ if (env.AI_MODEL_PRICING_JSON) {
 }
 
 const linkedinPartiallyConfigured = Boolean(
-  env.LINKEDIN_CLIENT_ID || env.LINKEDIN_CLIENT_SECRET || env.LINKEDIN_TOKEN_ENCRYPTION_KEY,
+  env.LINKEDIN_CLIENT_ID
+  || env.LINKEDIN_CLIENT_SECRET
+  || env.LINKEDIN_REDIRECT_URI
+  || env.LINKEDIN_TOKEN_ENCRYPTION_KEY,
 );
 
 if (env.LINKEDIN_ENABLED || linkedinPartiallyConfigured) {
@@ -122,6 +125,7 @@ const githubPartiallyConfigured = Boolean(
   || env.GITHUB_APP_ID
   || env.GITHUB_APP_SLUG
   || env.GITHUB_APP_PRIVATE_KEY
+  || env.GITHUB_REDIRECT_URI
   || env.GITHUB_TOKEN_ENCRYPTION_KEY,
 );
 

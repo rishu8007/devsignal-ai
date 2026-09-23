@@ -55,6 +55,30 @@ services:
       AI_SERVICE_URL: http://ai:8000
       AI_INTERNAL_API_KEY: ${AI_INTERNAL_API_KEY:?AI_INTERNAL_API_KEY is required}
       AI_SERVICE_TIMEOUT_MS: ${AI_SERVICE_TIMEOUT_MS:-150000}
+      LINKEDIN_ENABLED: ${LINKEDIN_ENABLED:-false}
+      LINKEDIN_CLIENT_ID: ${LINKEDIN_CLIENT_ID:-}
+      LINKEDIN_CLIENT_SECRET: ${LINKEDIN_CLIENT_SECRET:-}
+      LINKEDIN_REDIRECT_URI: ${LINKEDIN_REDIRECT_URI:-}
+      LINKEDIN_TOKEN_ENCRYPTION_KEY: ${LINKEDIN_TOKEN_ENCRYPTION_KEY:-}
+      LINKEDIN_SCOPES: ${LINKEDIN_SCOPES:-openid profile email}
+      LINKEDIN_POSTING_SCOPES: ${LINKEDIN_POSTING_SCOPES:-openid profile email w_member_social}
+      LINKEDIN_API_VERSION: ${LINKEDIN_API_VERSION:-202601}
+      LINKEDIN_PUBLISHING_ENABLED: ${LINKEDIN_PUBLISHING_ENABLED:-false}
+      LINKEDIN_SCHEDULER_ENABLED: "false"
+      LINKEDIN_SCHEDULE_HORIZON_DAYS: ${LINKEDIN_SCHEDULE_HORIZON_DAYS:-90}
+      LINKEDIN_SCHEDULE_LATE_WINDOW_MINUTES: ${LINKEDIN_SCHEDULE_LATE_WINDOW_MINUTES:-60}
+      GITHUB_ENABLED: ${GITHUB_ENABLED:-false}
+      GITHUB_APP_CLIENT_ID: ${GITHUB_APP_CLIENT_ID:-}
+      GITHUB_APP_CLIENT_SECRET: ${GITHUB_APP_CLIENT_SECRET:-}
+      GITHUB_APP_ID: ${GITHUB_APP_ID:-}
+      GITHUB_APP_SLUG: ${GITHUB_APP_SLUG:-}
+      GITHUB_APP_PRIVATE_KEY: ${GITHUB_APP_PRIVATE_KEY:-}
+      GITHUB_REDIRECT_URI: ${GITHUB_REDIRECT_URI:-}
+      GITHUB_TOKEN_ENCRYPTION_KEY: ${GITHUB_TOKEN_ENCRYPTION_KEY:-}
+      GITHUB_SYNC_ENABLED: "false"
+      GITHUB_SYNC_INTERVAL_MINUTES: ${GITHUB_SYNC_INTERVAL_MINUTES:-15}
+      GITHUB_SYNC_MAX_PAGES_PER_PASS: ${GITHUB_SYNC_MAX_PAGES_PER_PASS:-3}
+      GITHUB_INITIAL_HISTORY_DAYS: ${GITHUB_INITIAL_HISTORY_DAYS:-90}
     expose:
       - "4000"
     depends_on:
@@ -81,11 +105,37 @@ services:
       QDRANT_TIMEOUT_SECONDS: ${QDRANT_TIMEOUT_SECONDS:-10}
       INTERNAL_API_KEY: ${AI_INTERNAL_API_KEY:?AI_INTERNAL_API_KEY is required}
       OPENAI_TIMEOUT_SECONDS: ${OPENAI_TIMEOUT_SECONDS:-45}
+      WORKFLOW_CHECKPOINT_URI: "mongodb://${MONGO_ROOT_USERNAME}:${MONGO_ROOT_PASSWORD}@mongo:27017/devsignal_workflows?authSource=admin"
+      WORKFLOW_CHECKPOINT_DATABASE: ${WORKFLOW_CHECKPOINT_DATABASE:-devsignal_workflows}
     expose:
       - "8000"
     depends_on:
       qdrant:
         condition: service_started
+      mongo:
+        condition: service_healthy
+
+  github-sync:
+    profiles: ["github-sync"]
+    extends:
+      service: api
+    command: ["node", "services/api/dist/github-sync-worker.js"]
+    environment:
+      GITHUB_SYNC_ENABLED: ${GITHUB_SYNC_ENABLED:-false}
+    healthcheck:
+      disable: true
+    restart: unless-stopped
+
+  linkedin-scheduler:
+    profiles: ["linkedin-scheduler"]
+    extends:
+      service: api
+    command: ["node", "services/api/dist/linkedin-scheduler-worker.js"]
+    environment:
+      LINKEDIN_SCHEDULER_ENABLED: ${LINKEDIN_SCHEDULER_ENABLED:-false}
+    healthcheck:
+      disable: true
+    restart: unless-stopped
 
   mongo:
     image: mongo:8.0

@@ -41,6 +41,7 @@ export function parseArgs(argv) {
       options.composeFile = value;
     }
     else if (key === "env-path") options.envFile = value;
+    else if (key === "workflow-database") options.workflowDatabase = value;
     else options[key.replaceAll("-", "")] = value;
   }
   return options;
@@ -50,6 +51,13 @@ export function requireOption(options, name) {
   const value = options[name];
   if (typeof value !== "string" || value.trim() === "") {
     throw new Error(`Missing required option --${name.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}.`);
+  }
+  return value;
+}
+
+function checkpointDatabaseName(value) {
+  if (typeof value !== "string" || !/^[A-Za-z0-9_-]+$/.test(value)) {
+    throw new Error("Workflow checkpoint database name must be a safe MongoDB database name.");
   }
   return value;
 }
@@ -69,6 +77,19 @@ export function mongoDumpCommand(options) {
     command: "docker",
     args: composeArgs(options, ["exec", "-T", "mongo", "sh", "-c", shellCommand]),
     log: "docker compose ... exec -T mongo mongodump --username \"$MONGO_INITDB_ROOT_USERNAME\" --password [redacted] ...",
+  };
+}
+
+export function workflowMongoDumpCommand(options) {
+  const database = checkpointDatabaseName(options.workflowDatabase ?? "devsignal_workflows");
+  const shellCommand =
+    'mongodump --username "$MONGO_INITDB_ROOT_USERNAME" --password "$MONGO_INITDB_ROOT_PASSWORD" ' +
+    `--authenticationDatabase admin --db ${database} --archive`;
+  return {
+    command: "docker",
+    args: composeArgs(options, ["exec", "-T", "mongo", "sh", "-c", shellCommand]),
+    log: `docker compose ... exec -T mongo mongodump --username "$MONGO_INITDB_ROOT_USERNAME" --password [redacted] --db ${database} --archive`,
+    database,
   };
 }
 
@@ -104,6 +125,19 @@ export function mongoRestoreCommand(options) {
     command: "docker",
     args: composeArgs(options, ["exec", "-T", "mongo", "sh", "-c", shellCommand]),
     log: "docker compose ... exec -T mongo mongorestore --username \"$MONGO_INITDB_ROOT_USERNAME\" --password [redacted] --archive --stopOnError",
+  };
+}
+
+export function workflowMongoRestoreCommand(options) {
+  const database = checkpointDatabaseName(options.workflowDatabase ?? "devsignal_workflows");
+  const shellCommand =
+    'mongorestore --username "$MONGO_INITDB_ROOT_USERNAME" --password "$MONGO_INITDB_ROOT_PASSWORD" ' +
+    `--authenticationDatabase admin --archive --nsFrom="${database}.*" --nsTo="${database}.*" --stopOnError`;
+  return {
+    command: "docker",
+    args: composeArgs(options, ["exec", "-T", "mongo", "sh", "-c", shellCommand]),
+    log: `docker compose ... exec -T mongo mongorestore --username "$MONGO_INITDB_ROOT_USERNAME" --password [redacted] --db ${database} --archive --stopOnError`,
+    database,
   };
 }
 
@@ -167,12 +201,23 @@ export async function validateManifest(manifest, backupDirectory) {
   ) {
     throw new Error("Backup manifest database metadata is invalid.");
   }
-  if (!Array.isArray(manifest.artifacts) || manifest.artifacts.length !== 2) {
-    throw new Error("Backup manifest must contain MongoDB and Qdrant artifacts.");
+  if (!Array.isArray(manifest.artifacts) || ![2, 3].includes(manifest.artifacts.length)) {
+    throw new Error("Backup manifest must contain application MongoDB and Qdrant artifacts.");
   }
   const kinds = new Set(manifest.artifacts.map((artifact) => artifact.kind));
-  if (!kinds.has("mongodb-dump") || !kinds.has("qdrant-collection-snapshot") || kinds.size !== 2) {
-    throw new Error("Backup manifest must contain one MongoDB dump and one Qdrant snapshot.");
+  if (!kinds.has("mongodb-dump") || !kinds.has("qdrant-collection-snapshot") || kinds.size !== manifest.artifacts.length) {
+    throw new Error("Backup manifest contains invalid or duplicate artifact kinds.");
+  }
+  const workflowArtifact = manifest.artifacts.find((artifact) => artifact.kind === "workflow-mongodb-dump");
+  if (workflowArtifact && (
+    typeof manifest.workflowDatabase?.name !== "string"
+    || manifest.workflowDatabase.name.length === 0
+    || workflowArtifact.database !== manifest.workflowDatabase.name
+  )) {
+    throw new Error("Backup manifest workflow database metadata is invalid.");
+  }
+  if (!workflowArtifact) {
+    console.warn("Backup manifest has no workflow checkpoint artifact; durable LangGraph checkpoints are not included.");
   }
   for (const artifact of manifest.artifacts) {
     const filePath = artifactPath(backupDirectory, artifact.filename);

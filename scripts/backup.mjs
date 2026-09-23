@@ -10,6 +10,8 @@ import {
   qdrantSnapshotCommand,
   requireOption,
   sha256File,
+  workflowMongoDumpCommand,
+  composeArgs,
 } from "./backup-workflow.mjs";
 
 async function run(command, args, { input } = {}) {
@@ -38,12 +40,33 @@ async function gitCommit() {
   }
 }
 
+const writerServices = ["api", "ai", "linkedin-scheduler", "github-sync"];
+
+async function activeWriters(options, runner) {
+  const result = await runner("docker", composeArgs(options, ["ps", "--services", "--status", "running"]));
+  return result.stdout.toString("utf8").split(/\r?\n/).filter((service) => writerServices.includes(service));
+}
+
+async function stopWriters(options, running, runner) {
+  if (running.length > 0) {
+    await runner("docker", composeArgs(options, ["stop", ...running]));
+  }
+}
+
+async function resumeWriters(options, running, runner) {
+  if (running.length > 0) {
+    await runner("docker", composeArgs(options, ["start", ...running]));
+  }
+}
+
 export async function createBackup(options, runner = run) {
   const project = requireOption(options, "project");
   const outputDirectory = resolve(requireOption(options, "output"));
   const collection = requireOption(options, "collection");
   const composeFile = requireOption(options, "composeFile");
-  requireOption(options, "envFile");
+  const envFile = requireOption(options, "envFile");
+  options.envFile = envFile;
+  options.workflowDatabase = options.workflowDatabase ?? "devsignal_workflows";
   options.composeFiles = [composeFile];
   const mongoImage = options.mongoImage ?? "mongo:8.0";
   const qdrantImage = options.qdrantImage ?? "qdrant/qdrant:v1.19.1";
@@ -53,17 +76,19 @@ export async function createBackup(options, runner = run) {
       project,
       outputDirectory,
       collection,
-      commands: [mongoDumpCommand(options).log, qdrantSnapshotCommand({
+      commands: [
+        "pause running API, AI, LinkedIn scheduler, and GitHub sync writers",
+        mongoDumpCommand(options).log,
+        workflowMongoDumpCommand(options).log,
+        qdrantSnapshotCommand({
         project,
         outputDirectory,
         collection,
         helperPath: resolve("scripts/qdrant-snapshot.mjs"),
-      }).log],
+        }).log,
+      ],
     }, null, 2));
     return;
-  }
-  if (!options.writespaused) {
-    throw new Error("Refusing backup: pass --writes-paused after stopping application writes.");
   }
   try {
     await mkdir(outputDirectory, { recursive: false });
@@ -78,10 +103,14 @@ export async function createBackup(options, runner = run) {
     commit: await gitCommit(),
     project,
     database: { name: "devsignal", service: "mongo", image: mongoImage },
+    workflowDatabase: { name: options.workflowDatabase, service: "mongo", image: mongoImage },
     qdrant: { collection, service: "qdrant", image: qdrantImage },
     artifacts: [],
   };
+  let pausedWriters = [];
   try {
+    pausedWriters = await activeWriters(options, runner);
+    await stopWriters(options, pausedWriters, runner);
     const mongo = mongoDumpCommand(options);
     console.log(mongo.log);
     const mongoResult = await runner(mongo.command, mongo.args);
@@ -92,6 +121,19 @@ export async function createBackup(options, runner = run) {
       filename: "mongodb.archive",
       sizeBytes: mongoResult.stdout.length,
       sha256: await sha256File(mongoFile),
+    });
+
+    const workflowMongo = workflowMongoDumpCommand(options);
+    console.log(workflowMongo.log);
+    const workflowResult = await runner(workflowMongo.command, workflowMongo.args);
+    const workflowFile = join(outputDirectory, "workflow-mongodb.archive");
+    await writeFile(workflowFile, workflowResult.stdout);
+    baseManifest.artifacts.push({
+      kind: "workflow-mongodb-dump",
+      database: workflowMongo.database,
+      filename: "workflow-mongodb.archive",
+      sizeBytes: workflowResult.stdout.length,
+      sha256: await sha256File(workflowFile),
     });
 
     const qdrant = qdrantSnapshotCommand({
@@ -121,6 +163,8 @@ export async function createBackup(options, runner = run) {
       error: "backup operation failed; inspect the preserved artifacts and command output",
     }, null, 2));
     throw error;
+  } finally {
+    await resumeWriters(options, pausedWriters, runner);
   }
 }
 
@@ -132,18 +176,24 @@ async function main() {
     const collection = requireOption(options, "collection");
     const composeFile = requireOption(options, "composeFile");
     requireOption(options, "envFile");
+    options.workflowDatabase = options.workflowDatabase ?? "devsignal_workflows";
     options.composeFiles = [composeFile];
     console.log(JSON.stringify({
       operation: "backup",
       project,
       outputDirectory,
       collection,
-      commands: [mongoDumpCommand(options).log, qdrantSnapshotCommand({
-        project,
-        outputDirectory,
-        collection,
-        helperPath: resolve("scripts/qdrant-snapshot.mjs"),
-      }).log],
+      commands: [
+        "pause running API, AI, LinkedIn scheduler, and GitHub sync writers",
+        mongoDumpCommand(options).log,
+        workflowMongoDumpCommand(options).log,
+        qdrantSnapshotCommand({
+          project,
+          outputDirectory,
+          collection,
+          helperPath: resolve("scripts/qdrant-snapshot.mjs"),
+        }).log,
+      ],
     }, null, 2));
     return;
   }

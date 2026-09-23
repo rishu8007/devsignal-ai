@@ -703,16 +703,12 @@ this deployment automatically.
 ### Backup and isolated restore rehearsal
 
 Backups are separate MongoDB and Qdrant operations, not an atomic
-cross-store snapshot. Before backing up, schedule maintenance and stop
-application writes manually. For the deployment project:
-
-```powershell
-docker compose -p devsignal-https -f docker-compose.deploy.yml --env-file .env.deploy stop web api ai
-```
-
-The backup tooling requires an explicit acknowledgment that writes are
-paused. It does not stop services automatically, publish database ports, or
-export container environments:
+cross-store snapshot. The backup command records which API, AI, LinkedIn
+scheduler, and GitHub sync services are running, stops those writers for the
+full operation, and restarts only that same set in a `finally` path after
+success or failure. Keep the deployment maintenance window open until the
+resume command has completed. It does not publish database ports or export
+container environments:
 
 ```powershell
 node scripts/backup.mjs `
@@ -721,6 +717,7 @@ node scripts/backup.mjs `
   --env-path .env.deploy `
   --output backups\2026-09-17T1530Z `
   --collection devsignal_knowledge_chunks `
+  --workflow-database devsignal_workflows `
   --dry-run
 
 node scripts/backup.mjs `
@@ -729,19 +726,26 @@ node scripts/backup.mjs `
   --env-path .env.deploy `
   --output backups\2026-09-17T1530Z `
   --collection devsignal_knowledge_chunks `
-  --writes-paused
+  --workflow-database devsignal_workflows
 ```
 
 The output directory must not already exist. A successful backup contains
-`mongodb.archive`, `qdrant-collection.snapshot`, and
-`backup-manifest.json`. The manifest records format version, UTC time, commit
-when available, database/collection names, pinned service images, artifact
-sizes, SHA-256 checksums, and complete status. If either operation fails,
+`mongodb.archive`, `workflow-mongodb.archive`,
+`qdrant-collection.snapshot`, and `backup-manifest.json`. The manifest records
+both Mongo database names, the Qdrant collection, pinned service images,
+artifact sizes, SHA-256 checksums, and complete status. A success manifest is
+written only after all three artifacts succeed. If any operation fails,
 `backup-manifest.incomplete.json` is preserved and no success manifest is
 written. Backup artifacts contain private user data; protect them with
 restricted filesystem permissions and encrypted off-machine storage. Never
 put credentials, connection strings, note text, or environment dumps in the
 manifest.
+
+Manifests from before workflow checkpoint coverage remain readable and are
+explicitly reported as lacking durable LangGraph checkpoints. Restoring one
+does not invent checkpoint data; only newer manifests containing
+`workflow-mongodb.archive` restore `devsignal_workflows` into the isolated
+restore MongoDB.
 
 Before restore, validate the manifest and checksums without invoking any
 database or snapshot operation:
@@ -767,7 +771,9 @@ node scripts/restore.mjs `
 ```
 
 The isolated restore Compose file has fresh private MongoDB and Qdrant
-volumes and no published database ports. The script creates a protected
+volumes and no published database ports. Only those infrastructure services
+are created; API, web, AI, LinkedIn scheduler, and GitHub sync workers remain
+stopped. The script creates a protected
 temporary restore credential file, removes it in a `finally` path, and leaves
 the restore environment running for inspection; it never deletes containers
 or volumes automatically. Verify read-only state with commands such as:

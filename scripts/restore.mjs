@@ -4,6 +4,7 @@ import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   mongoRestoreCommand,
+  workflowMongoRestoreCommand,
   parseArgs,
   qdrantRestoreCommand,
   requireOption,
@@ -49,6 +50,7 @@ function printPlan(options, manifestPath, backupDirectory) {
       "verify restore-test target has no existing containers or volumes",
       "create fresh private MongoDB and Qdrant services",
       "restore MongoDB archive and Qdrant collection snapshot",
+      "restore workflow checkpoint archive when present",
     ],
   }, null, 2));
 }
@@ -88,12 +90,24 @@ async function main() {
     ]);
     await run("docker", compose);
     const mongoArtifact = manifest.artifacts.find((artifact) => artifact.kind === "mongodb-dump");
+    const workflowArtifact = manifest.artifacts.find((artifact) => artifact.kind === "workflow-mongodb-dump");
     const qdrantArtifact = manifest.artifacts.find((artifact) => artifact.kind === "qdrant-collection-snapshot");
     const mongo = mongoRestoreCommand({ ...restoreOptions, envFile: temporaryEnv });
     console.log(mongo.log);
     await run(mongo.command, mongo.args, {
       input: await readFile(join(backupDirectory, mongoArtifact.filename)),
     });
+    if (workflowArtifact) {
+      const workflowMongo = workflowMongoRestoreCommand({
+        ...restoreOptions,
+        envFile: temporaryEnv,
+        workflowDatabase: manifest.workflowDatabase.name,
+      });
+      console.log(workflowMongo.log);
+      await run(workflowMongo.command, workflowMongo.args, {
+        input: await readFile(join(backupDirectory, workflowArtifact.filename)),
+      });
+    }
     const qdrant = qdrantRestoreCommand({
       project,
       backupDirectory,

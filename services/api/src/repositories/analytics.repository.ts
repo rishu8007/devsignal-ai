@@ -3,13 +3,12 @@ import { SignalModel } from "../models/signal.model.js";
 import { GenerationModel } from "../models/generation.model.js";
 import { LinkedInPublicationModel, type LinkedInPublicationDocument } from "../models/linkedin-publication.model.js";
 import { DraftReviewModel } from "../models/draft-review.model.js";
+import { ResearchBriefModel } from "../models/research-brief.model.js";
+import { KnowledgeSourceModel } from "../models/knowledge-source.model.js";
 import { EngagementSnapshotModel, type EngagementSnapshotDocument } from "../models/engagement-snapshot.model.js";
+import { calculateDraftQualityScore, DRAFT_QUALITY_RUBRIC_VERSION } from "../services/draft-quality-rubric.js";
 
-interface ReviewSummaryAggregation {
-  population: Array<{ population: number }>;
-  severities: Array<{ _id: string; count: number }>;
-  categories: Array<{ _id: string; count: number }>;
-}
+const reviewPopulationLimit = 1000;
 
 export function ensureAnalyticsIndexes(): Promise<void> {
   return EngagementSnapshotModel.createIndexes().then(() => undefined);
@@ -50,7 +49,7 @@ export interface AnalyticsRepository {
   publicationSummary(ownerId: string, from: Date, to: Date): Promise<Record<string, number>>;
   topicSummary(ownerId: string, from: Date, to: Date, through: Date): Promise<Array<{ topic: string; publications: number; engagementPosts: number; impressions: number; reactions: number; comments: number; reposts: number; rateNumerator: number; rateDenominator: number; rateEligiblePosts: number }>>;
   publishedPosts(ownerId: string, from: Date, to: Date, skip: number, limit: number): Promise<Array<{ publicationId: string; topic: string; publishedAt: Date; text: string }>>;
-  reviewSummary(ownerId: string, from: Date, to: Date): Promise<{ population: number; severities: Record<string, number>; categories: Record<string, number> }>;
+  reviewSummary(ownerId: string, from: Date, to: Date): Promise<{ assessed: number; unassessed: number; outdated: number; averageScore: number | null; rubricVersion: string; severities: Record<string, number>; categories: Record<string, number>; suggestions: Array<{ text: string; count: number }>; population: number; populationLimit: number; truncated: boolean; reviewQueryTruncated: boolean }>;
   snapshots(ownerId: string, publicationIds: string[], through: Date): Promise<EngagementSnapshotDocument[]>;
   findPublication(ownerId: string, publicationId: string): Promise<LinkedInPublicationDocument | null>;
   createSnapshot(ownerId: string, input: Record<string, unknown>): Promise<EngagementSnapshotDocument>;
@@ -183,23 +182,68 @@ export const defaultAnalyticsRepository: AnalyticsRepository = {
     return rows;
   },
   reviewSummary: async (ownerId, from, to) => {
-    const rows = await DraftReviewModel.aggregate<ReviewSummaryAggregation>([
-      { $match: { ownerId: new Types.ObjectId(ownerId), status: "succeeded", stale: false, createdAt: { $gte: from, $lt: to } } },
-      { $sort: { signalId: 1, variationId: 1, createdAt: -1, _id: -1 } },
-      { $group: { _id: { signalId: "$signalId", variationId: "$variationId" }, review: { $first: "$$ROOT" } } },
-      { $replaceRoot: { newRoot: "$review" } },
-      { $unwind: { path: "$findings", preserveNullAndEmptyArrays: true } },
-      { $facet: {
-        population: [{ $group: { _id: null, values: { $addToSet: { signalId: "$signalId", variationId: "$variationId" } } } }, { $project: { _id: 0, population: { $size: "$values" } } }],
-        severities: [{ $match: { "findings.severity": { $type: "string" } } }, { $group: { _id: "$findings.severity", count: { $sum: 1 } } }],
-        categories: [{ $match: { "findings.category": { $type: "string" } } }, { $group: { _id: "$findings.category", count: { $sum: 1 } } }],
-      } },
-    ]).exec();
-    const row = rows[0];
+    const generations = await GenerationModel.find({ ownerId: new Types.ObjectId(ownerId), createdAt: { $gte: from, $lt: to } })
+      .sort({ createdAt: 1, _id: 1 }).limit(reviewPopulationLimit + 1).lean().exec();
+    const truncated = generations.length > reviewPopulationLimit;
+    const boundedGenerations = generations.slice(0, reviewPopulationLimit);
+    const keys = boundedGenerations.flatMap((generation) => generation.variations.map((variation) => ({
+      signalId: generation.signalId.toString(), generationId: generation._id.toString(), variationId: variation._id.toString(), content: variation.content,
+    })));
+    const reviews = await DraftReviewModel.find({ ownerId: new Types.ObjectId(ownerId), signalId: { $in: boundedGenerations.map((generation) => generation.signalId) } })
+      .sort({ createdAt: -1, _id: -1 }).limit(reviewPopulationLimit * 3).lean().exec();
+    const reviewQueryTruncated = reviews.length >= reviewPopulationLimit * 3;
+    const latest = new Map<string, typeof reviews[number]>();
+    for (const review of reviews) {
+      const key = `${review.signalId}:${review.generationId}:${review.variationId}`;
+      if (!latest.has(key)) latest.set(key, review);
+    }
+    const briefIds = [...new Set([...latest.values()].map((review) => review.researchBriefId.toString()))];
+    const briefs = await ResearchBriefModel.find({ ownerId: new Types.ObjectId(ownerId), _id: { $in: briefIds } }).lean().exec();
+    const sourceIds = [...new Set(briefs.flatMap((brief) => brief.sourceVersions.map((source) => source.sourceId)))];
+    const sources = await KnowledgeSourceModel.find({ ownerId: new Types.ObjectId(ownerId), _id: { $in: sourceIds } }).lean().exec();
+    const sourceMap = new Map(sources.map((source) => [source._id.toString(), source]));
+    const briefMap = new Map(briefs.map((brief) => [brief._id.toString(), brief]));
+    const severities: Record<string, number> = {};
+    const categories: Record<string, number> = {};
+    const suggestionCounts = new Map<string, number>();
+    const scores: number[] = [];
+    let assessed = 0;
+    let outdated = 0;
+    let unassessed = 0;
+    for (const key of keys) {
+      const review = latest.get(`${key.signalId}:${key.generationId}:${key.variationId}`);
+      if (!review) {
+        unassessed += 1;
+        continue;
+      }
+      const brief = briefMap.get(review.researchBriefId.toString());
+      const evidenceCurrent = Boolean(brief && !brief.stale && brief.sourceVersions.every((item) => typeof item.sourceId === "string" && typeof item.contentVersion === "number" && (() => {
+        const source = sourceMap.get(item.sourceId);
+        return source?.processingStatus === "indexed" && source.indexedContentVersion === source.contentVersion && source.contentVersion === item.contentVersion;
+      })()));
+      if (review.status !== "succeeded") {
+        unassessed += 1;
+        continue;
+      }
+      const current = review.status === "succeeded" && !review.stale && review.draftContent === key.content && evidenceCurrent;
+      if (!current) {
+        outdated += 1;
+        continue;
+      }
+      const score = typeof review.qualityScore === "number" ? review.qualityScore : calculateDraftQualityScore(review.draftContent, review.findings);
+      assessed += 1;
+      scores.push(score);
+      for (const finding of review.findings) {
+        severities[finding.severity] = (severities[finding.severity] ?? 0) + 1;
+        categories[finding.category] = (categories[finding.category] ?? 0) + 1;
+        if (finding.suggestion) suggestionCounts.set(finding.suggestion, (suggestionCounts.get(finding.suggestion) ?? 0) + 1);
+      }
+    }
     return {
-      population: row?.population[0]?.population ?? 0,
-      severities: Object.fromEntries((row?.severities ?? []).map((item) => [item._id, item.count])),
-      categories: Object.fromEntries((row?.categories ?? []).map((item) => [item._id, item.count])),
+      assessed, unassessed, outdated, averageScore: scores.length ? scores.reduce((sum, score) => sum + score, 0) / scores.length : null,
+      rubricVersion: DRAFT_QUALITY_RUBRIC_VERSION, severities, categories,
+      suggestions: [...suggestionCounts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, 5).map(([text, count]) => ({ text, count })),
+      population: keys.length, populationLimit: reviewPopulationLimit, truncated, reviewQueryTruncated,
     };
   },
   snapshots: listEngagementSnapshots,

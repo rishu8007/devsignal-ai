@@ -849,7 +849,7 @@ export function DashboardWorkspace() {
       <TopicPlannerView active={activeTab === "planner"} />
       <LinkedInConnectionsView active={activeTab === "connections"} onNavigate={setActiveTab} />
       <GithubConnectionCard active={activeTab === "connections"} />
-      <AnalyticsView active={activeTab === "analytics"} />
+      <AnalyticsView active={activeTab === "analytics"} onNavigate={(tab) => setActiveTab(tab)} />
       <UsageView active={activeTab === "usage"} />
       {researchSignal && <ResearchBriefView signal={researchSignal} onClose={() => setResearchSignal(null)} />}
     </>

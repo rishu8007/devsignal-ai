@@ -38,7 +38,7 @@ export type AnalyticsResponse = {
     engagementRateEligiblePosts: number;
     engagementRateFormula: string;
   }>;
-  reviewInsights: { population: number; severities: Record<string, number>; categories: Record<string, number> };
+  reviewInsights: { assessed: number; unassessed: number; outdated: number; averageScore: number | null; rubricVersion: string; severities: Record<string, number>; categories: Record<string, number>; suggestions: Array<{ text: string; count: number }>; population: number; populationLimit: number; truncated: boolean; reviewQueryTruncated: boolean };
   posts: AnalyticsPost[];
 };
 

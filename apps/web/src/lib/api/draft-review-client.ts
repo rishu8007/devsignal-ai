@@ -11,6 +11,8 @@ export interface DraftReview {
   summary: string;
   findings: Array<{ category: string; severity: string; passage: string; explanation: string; evidenceIds: string[]; suggestion: string }>;
   proposedDraft: string | null;
+  qualityScore: number | null;
+  qualityRubricVersion: string;
   status: string;
   stale: boolean;
   errorCode: string | null;

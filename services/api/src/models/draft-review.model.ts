@@ -26,6 +26,7 @@ const draftReviewSchema = new Schema(
     briefSnapshot: { type: Schema.Types.Mixed, required: true, immutable: true },
     findings: { type: [findingSchema], required: true, default: [] },
     summary: { type: String, required: true, maxlength: 1500 },
+    qualityScore: { type: Number, default: null, min: 0, max: 100 },
     proposedDraft: { type: String, default: null, maxlength: 3000 },
     status: { type: String, enum: ["running", "succeeded", "failed", "uncertain"], required: true },
     stale: { type: Boolean, required: true, default: false },

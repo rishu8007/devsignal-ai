@@ -345,6 +345,17 @@ prediction of engagement and never approves or publishes a draft. A review is
 bound to the variation's content hash and current research evidence. If the
 draft or evidence changes, feedback is shown as outdated or “Not assessed”
 until the existing review action is run again.
+Analytics reports the same rubric over the selected period, using only the
+latest review for each signal/variation pair. Current completed reviews
+contribute to the average; unassessed and outdated reviews remain in coverage
+counts but never contribute to the score. Historical reviews without a stored
+rubric score are reported as unavailable rather than reconstructed.
+The analytics population is the variations in generations created during the
+selected period, capped at 1,000 generations; the response discloses when that
+cap truncates the population. Review lookup is bounded to 3,000 records and
+discloses if that history cap is reached. Reviews are matched by owner, signal, generation,
+and variation identity, and evidence is current only when every recorded source
+still exists, is indexed, and has the recorded content version.
 
 ## Architecture
 

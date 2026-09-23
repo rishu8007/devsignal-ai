@@ -9,6 +9,7 @@ import { findSignalByIdAndOwner } from "../repositories/signal.repository.js";
 import { createDraftReview, findDraftReviewByIdAndOwner, findDraftReviewByRequestId, listDraftReviews, updateDraftReview } from "../repositories/draft-review.repository.js";
 import type { ApplyReviewInput, CreateReviewInput } from "../validation/draft-review.validation.js";
 import { admitAiOperation, completeAiOperation, markAiDispatched, markAiUncertain, releaseAiOperation } from "./usage.service.js";
+import { calculateDraftQualityScore, DRAFT_QUALITY_RUBRIC_VERSION } from "./draft-quality-rubric.js";
 
 const hash = (value: string) => createHash("sha256").update(value).digest("hex");
 type Generation = Awaited<ReturnType<typeof findGenerationByOwnerAndSignal>>;
@@ -36,7 +37,7 @@ function variation(generation: Generation, variationId: string) {
 }
 function publicReview(review: Awaited<ReturnType<typeof findDraftReviewByIdAndOwner>>) {
   if (!review) throw new AppError(404, "DRAFT_REVIEW_NOT_FOUND", "Draft review not found");
-  return { id: review._id.toString(), signalId: review.signalId.toString(), generationId: review.generationId.toString(), variationId: review.variationId.toString(), researchBriefId: review.researchBriefId.toString(), draftContent: review.draftContent, draftContentHash: review.draftContentHash, findings: review.findings, summary: review.summary, proposedDraft: review.proposedDraft, status: review.status, stale: review.stale, errorCode: review.errorCode ?? null, model: review.model, createdAt: review.createdAt, updatedAt: review.updatedAt };
+  return { id: review._id.toString(), signalId: review.signalId.toString(), generationId: review.generationId.toString(), variationId: review.variationId.toString(), researchBriefId: review.researchBriefId.toString(), draftContent: review.draftContent, draftContentHash: review.draftContentHash, findings: review.findings, summary: review.summary, proposedDraft: review.proposedDraft, qualityScore: review.status === "succeeded" && !review.stale ? review.qualityScore ?? calculateDraftQualityScore(review.draftContent, review.findings) : null, qualityRubricVersion: DRAFT_QUALITY_RUBRIC_VERSION, status: review.status, stale: review.stale, errorCode: review.errorCode ?? null, model: review.model, createdAt: review.createdAt, updatedAt: review.updatedAt };
 }
 async function assertBriefEvidenceCurrent(
   ownerId: string,
@@ -117,7 +118,7 @@ export async function createDraftReviewForUser(ownerId: string, signalId: string
   }
   const after = variation(await repository.findGeneration(ownerId, signalId), variationId);
   const stale = sourceStale || after.item.content !== current.item.content || (await repository.findSignal(ownerId, signalId))?.revision !== signal.revision;
-  const completed = await repository.update(run._id.toString(), { status: "succeeded", model: result.model, summary: result.summary, findings: result.findings, proposedDraft: result.proposedDraft, stale });
+  const completed = await repository.update(run._id.toString(), { status: "succeeded", model: result.model, summary: result.summary, findings: result.findings, proposedDraft: result.proposedDraft, qualityScore: stale ? null : calculateDraftQualityScore(current.item.content, result.findings), stale });
   return publicReview(completed);
 }
 

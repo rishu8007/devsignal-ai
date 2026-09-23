@@ -53,6 +53,14 @@ export async function transitionUsage(
   usage?: Partial<Pick<UsageDocument, "inputTokens" | "outputTokens" | "embeddingTokens" | "model" | "pricingBasis">>,
   now = new Date(),
 ) {
+  const validTransitions: Record<UsageDocument["status"], UsageDocument["status"][]> = {
+    reserved: ["dispatched", "released"],
+    dispatched: ["completed", "uncertain"],
+    completed: [],
+    released: [],
+    uncertain: [],
+  };
+  if (!validTransitions[from].includes(to)) return null;
   const updated = await UsageModel.findOneAndUpdate(
     { _id: id, status: from, ...(to === "dispatched" ? { expiresAt: { $gt: now } } : {}) },
     { $set: { status: to, ...usage, ...(to === "dispatched" ? { dispatchStartedAt: now } : {}), ...(to === "completed" ? { completedAt: now, usageRecordedAt: now } : {}) } },

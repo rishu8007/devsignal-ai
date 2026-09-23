@@ -1,0 +1,23 @@
+services:
+  mongo:
+    image: mongo:8.0
+    ports:
+      - "127.0.0.1:27018:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: integration_root
+      MONGO_INITDB_ROOT_PASSWORD: integration_only_password
+      MONGO_INITDB_DATABASE: devsignal_integration
+    volumes:
+      - devsignal_integration_mongo_data:/data/db
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "mongosh --quiet --username integration_root --password integration_only_password --authenticationDatabase admin --eval \"db.adminCommand({ ping: 1 }).ok\" | grep 1",
+        ]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+volumes:
+  devsignal_integration_mongo_data:

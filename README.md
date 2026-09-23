@@ -249,6 +249,24 @@ remain on the deferred testing checklist. The checkpoint database is separate
 from the application database when configured; backup coverage for that
 database must be extended before production rollout.
 
+### Local MongoDB integration suite
+
+The standalone MongoDB correctness milestone uses only the dedicated
+`docker-compose.integration.yml` project, localhost port `27018`, synthetic
+credentials, and the `devsignal_integration` database. It does not start the
+API, AI service, scheduler, or publishing workers; provider behavior is
+synthetic and no external provider is contacted. Run from the repository root:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\run-mongodb-integration.ps1
+```
+
+The script refuses any URI other than the dedicated localhost integration
+database and removes only its own Compose project, container, and named volume
+after the tests. It never touches the normal development Compose project or
+volumes. Docker Desktop, Node dependencies, and a working API TypeScript
+toolchain are required.
+
 ## Architecture
 
 | Area | Location | Responsibility |

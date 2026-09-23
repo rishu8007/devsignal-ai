@@ -26,7 +26,7 @@ function variations(citations: string[]) {
 }
 
 test("workflow citation mapping preserves server-owned provenance", () => {
-  const result = mapWorkflowGenerationCitations(evidence, { model: "test", variations: variations(["e1"]) }, new Map());
+  const result = mapWorkflowGenerationCitations(evidence, { model: "test", variations: variations([evidence[0].chunkId]) }, new Map());
   assert.equal(result.variations[0].citations[0].sourceId, evidence[0].sourceId);
   assert.equal(result.variations[0].citations[0].contentVersion, 3);
   assert.equal(result.variations[0].citations[0].chunkId, evidence[0].chunkId);

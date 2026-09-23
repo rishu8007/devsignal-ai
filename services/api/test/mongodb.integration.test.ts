@@ -7,6 +7,10 @@ import { SignalModel } from "../src/models/signal.model.js";
 import { LinkedInPublicationModel } from "../src/models/linkedin-publication.model.js";
 import { EngagementSnapshotModel } from "../src/models/engagement-snapshot.model.js";
 import { DraftReviewModel } from "../src/models/draft-review.model.js";
+import { GithubActivityModel } from "../src/models/github-activity.model.js";
+import { GithubConnectionModel } from "../src/models/github-connection.model.js";
+import { consumeGithubOauthState, createGithubOauthState, ensureGithubIndexes, claimGithubActivityConversion } from "../src/repositories/github.repository.js";
+import { createSignal } from "../src/repositories/signal.repository.js";
 import { defaultAnalyticsRepository, ensureAnalyticsIndexes } from "../src/repositories/analytics.repository.js";
 import { ensureLinkedInIndexes, claimLinkedInPublication, authorizeLinkedInPublicationDispatch, cancelLinkedInPublication } from "../src/repositories/linkedin.repository.js";
 
@@ -22,13 +26,15 @@ before(async () => {
     throw new Error("Refusing integration tests: MONGODB_INTEGRATION_URI is not the dedicated localhost database");
   }
   await mongoose.connect(uri);
-  await Promise.all([UsageModel.deleteMany({}), QuotaModel.deleteMany({}), SignalModel.deleteMany({}), LinkedInPublicationModel.deleteMany({}), EngagementSnapshotModel.deleteMany({}), DraftReviewModel.deleteMany({})]);
+  await Promise.all([UsageModel.deleteMany({}), QuotaModel.deleteMany({}), SignalModel.deleteMany({}), LinkedInPublicationModel.deleteMany({}), EngagementSnapshotModel.deleteMany({}), DraftReviewModel.deleteMany({}), GithubActivityModel.deleteMany({}), GithubConnectionModel.deleteMany({})]);
   await ensureAnalyticsIndexes();
+  await SignalModel.createIndexes();
   await ensureLinkedInIndexes();
+  await ensureGithubIndexes();
 });
 
 test.beforeEach(async () => {
-  await Promise.all([UsageModel.deleteMany({}), QuotaModel.deleteMany({}), SignalModel.deleteMany({}), LinkedInPublicationModel.deleteMany({}), EngagementSnapshotModel.deleteMany({}), DraftReviewModel.deleteMany({})]);
+  await Promise.all([UsageModel.deleteMany({}), QuotaModel.deleteMany({}), SignalModel.deleteMany({}), LinkedInPublicationModel.deleteMany({}), EngagementSnapshotModel.deleteMany({}), DraftReviewModel.deleteMany({}), GithubActivityModel.deleteMany({}), GithubConnectionModel.deleteMany({})]);
 });
 
 after(async () => {
@@ -127,4 +133,70 @@ test("real MongoDB review aggregation counts the latest review once", async () =
   const summary = await defaultAnalyticsRepository.reviewSummary(owner.toString(), new Date("2026-09-01"), new Date("2026-09-10"));
   assert.equal(summary.population, 1);
   assert.deepEqual(summary.severities, { low: 1, high: 1 });
+});
+
+test("real MongoDB conversion identity allows concurrent retries to recover one Signal", async () => {
+  const activityId = new Types.ObjectId();
+  await GithubActivityModel.create({
+    _id: activityId,
+    ownerId: owner,
+    connectionGeneration: 1,
+    repositoryId: 42,
+    repositoryFullName: "acme/app",
+    kind: "commit",
+    providerId: "commit-1",
+    title: "A recoverable GitHub activity",
+    summary: "A recoverable GitHub activity with enough detail for a Signal.",
+    url: "https://github.com/acme/app/commit/commit-1",
+    occurredAt: now,
+    importedAt: now,
+  });
+
+  const claim = await claimGithubActivityConversion(owner.toString(), activityId.toString(), "claim-1", now);
+  assert.ok(claim);
+  const results = await Promise.allSettled([
+    createSignal(owner.toString(), {
+      topic: "A recoverable GitHub activity",
+      notes: "A recoverable GitHub activity with enough detail for a Signal.",
+      primaryAudience: "Developers & engineers",
+      contentType: "Technical insight",
+    }, { runId: activityId.toString(), suggestionId: "github-activity", sourceVersions: [] }),
+    createSignal(owner.toString(), {
+      topic: "A recoverable GitHub activity",
+      notes: "A recoverable GitHub activity with enough detail for a Signal.",
+      primaryAudience: "Developers & engineers",
+      contentType: "Technical insight",
+    }, { runId: activityId.toString(), suggestionId: "github-activity", sourceVersions: [] }),
+  ]);
+  assert.equal(results.filter((result) => result.status === "fulfilled").length, 1);
+  assert.equal(await SignalModel.countDocuments({ ownerId: owner, "planning.runId": activityId, "planning.suggestionId": "github-activity" }), 1);
+});
+
+test("real MongoDB GitHub callback state is single-use, owner/session-bound, and expires", async () => {
+  const stateHash = "integration-state";
+  await createGithubOauthState({
+    stateHash,
+    ownerId: owner,
+    sessionHash: "session-a",
+    expiresAt: new Date(now.getTime() + 60_000),
+    connectionGeneration: 0,
+  });
+  assert.ok(await consumeGithubOauthState(stateHash, "session-a", now));
+  assert.equal(await consumeGithubOauthState(stateHash, "session-a", now), null);
+  await createGithubOauthState({
+    stateHash: "expired-state",
+    ownerId: owner,
+    sessionHash: "session-a",
+    expiresAt: new Date(now.getTime() - 1),
+    connectionGeneration: 0,
+  });
+  assert.equal(await consumeGithubOauthState("expired-state", "session-a", now), null);
+  await createGithubOauthState({
+    stateHash: "other-session",
+    ownerId: owner,
+    sessionHash: "session-a",
+    expiresAt: new Date(now.getTime() + 60_000),
+    connectionGeneration: 0,
+  });
+  assert.equal(await consumeGithubOauthState("other-session", "session-b", now), null);
 });

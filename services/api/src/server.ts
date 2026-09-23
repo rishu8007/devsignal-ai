@@ -8,6 +8,7 @@ import { ensureDraftReviewIndexes } from "./repositories/draft-review.repository
 import { ensureContentWorkflowIndexes } from "./repositories/content-workflow.repository.js";
 import { startContentWorkflowWorker } from "./services/content-workflow.service.js";
 import { ensureLinkedInIndexes } from "./repositories/linkedin.repository.js";
+import { ensureGithubIndexes } from "./repositories/github.repository.js";
 import { startLinkedInSchedulerWorker } from "./services/linkedin-publication.service.js";
 import { startNotificationReconciliationWorker } from "./services/notification.service.js";
 import { ensureNotificationIndexes } from "./repositories/notification.repository.js";
@@ -66,6 +67,7 @@ async function startServer(): Promise<void> {
     await ensureDraftReviewIndexes();
     await ensureContentWorkflowIndexes();
     await ensureLinkedInIndexes();
+    await ensureGithubIndexes();
     await ensureNotificationIndexes();
     await ensureAnalyticsIndexes();
     await ensureUsageIndexes();

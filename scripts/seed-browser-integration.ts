@@ -5,6 +5,11 @@ import { SignalModel } from "../services/api/src/models/signal.model.js";
 import { LinkedInPublicationModel } from "../services/api/src/models/linkedin-publication.model.js";
 import { EngagementSnapshotModel } from "../services/api/src/models/engagement-snapshot.model.js";
 import { NotificationModel } from "../services/api/src/models/notification.model.js";
+import { KnowledgeSourceModel } from "../services/api/src/models/knowledge-source.model.js";
+import { GenerationModel } from "../services/api/src/models/generation.model.js";
+import { ResearchBriefModel } from "../services/api/src/models/research-brief.model.js";
+import { DraftReviewModel } from "../services/api/src/models/draft-review.model.js";
+import { ContentWorkflowModel } from "../services/api/src/models/content-workflow.model.js";
 
 const uri = process.env.MONGODB_URI ?? "";
 const databaseName = "devsignal_integration";
@@ -20,6 +25,14 @@ const ownerEmail = "browser-seeded@example.test";
 const otherOwnerEmail = "browser-other@example.test";
 const password = "BrowserIntegrationPassword123!";
 const publishedAt = new Date("2026-09-20T12:00:00.000Z");
+const researchSignalId = new Types.ObjectId("6ab39abec9ce8add09440021");
+const reviewSignalId = new Types.ObjectId("6ab39abec9ce8add09440023");
+const workflowSignalId = new Types.ObjectId("6ab39abec9ce8add09440022");
+const researchSourceId = new Types.ObjectId("6ab39abec9ce8add09440011");
+const reviewSourceId = new Types.ObjectId("6ab39abec9ce8add09440013");
+const workflowSourceId = new Types.ObjectId("6ab39abec9ce8add09440012");
+const researchSourceContent = "Deterministic browser research evidence proves the local workflow boundary.";
+const workflowSourceContent = "Deterministic workflow evidence supports human approval without publishing.";
 
 async function main() {
   await mongoose.connect(uri);
@@ -29,6 +42,11 @@ async function main() {
     LinkedInPublicationModel.deleteMany({}),
     EngagementSnapshotModel.deleteMany({}),
     NotificationModel.deleteMany({}),
+    KnowledgeSourceModel.deleteMany({}),
+    GenerationModel.deleteMany({}),
+    ResearchBriefModel.deleteMany({}),
+    DraftReviewModel.deleteMany({}),
+    ContentWorkflowModel.deleteMany({}),
   ]);
 
   const passwordHash = await bcrypt.hash(password, 4);
@@ -52,6 +70,73 @@ async function main() {
     primaryAudience: "Developers & engineers",
     contentType: "Technical insight",
   })));
+  await SignalModel.create([
+    {
+      _id: researchSignalId,
+      ownerId,
+      topic: "Browser research evidence",
+      notes: "A seeded signal for research and technical review.",
+      primaryAudience: "Developers & engineers",
+      contentType: "Technical insight",
+    },
+    {
+      _id: reviewSignalId,
+      ownerId,
+      topic: "Browser technical review",
+      notes: "A seeded signal for the technical review journey.",
+      primaryAudience: "Developers & engineers",
+      contentType: "Technical insight",
+    },
+    {
+      _id: workflowSignalId,
+      ownerId,
+      topic: "Browser workflow approval",
+      notes: "A seeded signal for the content workflow journey.",
+      primaryAudience: "Developers & engineers",
+      contentType: "Technical insight",
+    },
+  ]);
+  await KnowledgeSourceModel.create([
+    {
+      _id: researchSourceId,
+      ownerId,
+      title: "Browser research source",
+      content: researchSourceContent,
+      contentVersion: 1,
+      processingStatus: "indexed",
+      indexedContentVersion: 1,
+      indexedChunkerVersion: "browser-chunker",
+      indexedEmbeddingModel: "browser-embedding",
+      indexedDimensions: 4,
+      indexedChunkCount: 1,
+    },
+    {
+      _id: workflowSourceId,
+      ownerId,
+      title: "Browser workflow source",
+      content: workflowSourceContent,
+      contentVersion: 1,
+      processingStatus: "indexed",
+      indexedContentVersion: 1,
+      indexedChunkerVersion: "browser-chunker",
+      indexedEmbeddingModel: "browser-embedding",
+      indexedDimensions: 4,
+      indexedChunkCount: 1,
+    },
+    {
+      _id: reviewSourceId,
+      ownerId,
+      title: "Browser review source",
+      content: researchSourceContent,
+      contentVersion: 1,
+      processingStatus: "indexed",
+      indexedContentVersion: 1,
+      indexedChunkerVersion: "browser-chunker",
+      indexedEmbeddingModel: "browser-embedding",
+      indexedDimensions: 4,
+      indexedChunkCount: 1,
+    },
+  ]);
   await LinkedInPublicationModel.create(publicationIds.map((previewId, index) => ({
     ownerId,
     signalId: signalIds[index],
@@ -95,7 +180,7 @@ async function main() {
   ]);
 
   await mongoose.disconnect();
-  console.log(JSON.stringify({ ownerEmail, otherOwnerEmail, password, publicationIds }));
+  console.log(JSON.stringify({ ownerEmail, otherOwnerEmail, password, publicationIds, researchSignalId, reviewSignalId, workflowSignalId, researchSourceId, reviewSourceId, workflowSourceId }));
 }
 
 void main();

@@ -13,8 +13,10 @@ try {
   $env:WEB_TEST_PORT = "3200"
   $env:NEXT_PUBLIC_API_BASE_URL = "http://127.0.0.1:4100/api/v1"
   npm run build --workspace apps/web
+  npm run build --workspace services/api
 
   $env:NODE_ENV = "test"
+  $env:BROWSER_INTEGRATION = "true"
   $env:PORT = "4100"
   $env:WEB_ORIGIN = "http://127.0.0.1:3200"
   $env:MONGODB_URI = $mongoUri

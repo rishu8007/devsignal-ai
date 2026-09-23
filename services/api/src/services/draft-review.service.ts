@@ -82,7 +82,7 @@ export async function createDraftReviewForUser(ownerId: string, signalId: string
 
   let run;
   try {
-    run = await repository.create({ ownerId, requestId: input.requestId, inputFingerprint, signalId, generationId: current.generation._id, variationId: current.item._id, researchBriefId: brief._id, draftContentHash: hash(current.item.content), draftContent: current.item.content, briefSnapshot: brief.evidence, findings: [], summary: "", proposedDraft: null, status: "running", stale: false, model: "pending" });
+    run = await repository.create({ ownerId, requestId: input.requestId, inputFingerprint, signalId, generationId: current.generation._id, variationId: current.item._id, researchBriefId: brief._id, draftContentHash: hash(current.item.content), draftContent: current.item.content, briefSnapshot: brief.evidence, findings: [], summary: "Review in progress.", proposedDraft: null, status: "running", stale: false, model: "pending" });
   } catch (error) {
     if (error instanceof Error && /duplicate|E11000/i.test(error.message)) {
       const duplicate = await repository.findRequest(ownerId, input.requestId);

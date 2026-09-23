@@ -9,9 +9,10 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/server.js",
     "scheduler": "node dist/linkedin-scheduler-worker.js",
+    "github-sync": "node dist/github-sync-worker.js",
     "typecheck": "tsc --noEmit",
     "test": "node ../../scripts/run-api-tests.mjs",
-    "test:integration": "node --import tsx --test test/mongodb.integration.test.ts"
+    "test:integration": "node --import tsx --test --test-concurrency=1 test/mongodb.integration.test.ts test/github-connection.integration.test.ts"
   },
   "dependencies": {
     "bcrypt": "^6.0.0",

@@ -77,7 +77,7 @@ export async function createResearchBriefForUser(
   const sources = usableSources(await repository.findSources(ownerId, ids), ids);
   let run;
   try {
-    run = await repository.createRun({ ownerId, requestId: input.requestId, inputFingerprint, signalId, signalRevision: signal.revision, sourceVersions: sources.map((source) => ({ sourceId: source._id.toString(), contentVersion: source.contentVersion })), evidence: [], brief: { topicSummary: "", talkingPoints: [], claimAssessments: [], missingInformation: [], questions: [], limitations: [] }, status: "running", model: "pending", stale: false });
+    run = await repository.createRun({ ownerId, requestId: input.requestId, inputFingerprint, signalId, signalRevision: signal.revision, sourceVersions: sources.map((source) => ({ sourceId: source._id.toString(), contentVersion: source.contentVersion })), evidence: [], brief: { topicSummary: "Research in progress.", talkingPoints: [], claimAssessments: [], missingInformation: [], questions: [], limitations: [] }, status: "running", model: "pending", stale: false });
   } catch (error) {
     if (error instanceof Error && /duplicate|E11000/i.test(error.message)) {
       const duplicate = await repository.findRequest(ownerId, input.requestId);

@@ -3,7 +3,7 @@ import { AppError } from "../errors/app-error.js";
 
 export const loginRateLimitMiddleware = rateLimit({
   windowMs: 15 * 60 * 1000,
-  limit: 10,
+  limit: process.env.NODE_ENV === "test" && process.env.BROWSER_INTEGRATION === "true" ? 100 : 10,
   standardHeaders: true,
   legacyHeaders: false,
   handler: (_request, _response, next) => {

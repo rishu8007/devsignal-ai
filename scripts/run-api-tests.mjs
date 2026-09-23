@@ -4,7 +4,10 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const apiRoot = fileURLToPath(new URL("../services/api/", import.meta.url));
-const excluded = "mongodb.integration.test.ts";
+const excluded = new Set([
+  "mongodb.integration.test.ts",
+  "github-connection.integration.test.ts",
+]);
 
 async function testFiles(directory) {
   const entries = await readdir(join(apiRoot, directory), { withFileTypes: true });
@@ -13,7 +16,7 @@ async function testFiles(directory) {
     const path = join(apiRoot, directory, entry.name);
     if (entry.isDirectory()) {
       files.push(...await testFiles(path));
-    } else if (entry.isFile() && /\.test\.ts$/.test(entry.name) && entry.name !== excluded) {
+    } else if (entry.isFile() && /\.test\.ts$/.test(entry.name) && !excluded.has(entry.name)) {
       files.push(path);
     }
   }

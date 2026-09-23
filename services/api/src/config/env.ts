@@ -50,6 +50,18 @@ const environmentSchema = z.object({
   LINKEDIN_SCHEDULER_ENABLED: z.enum(["true", "false"]).default("false").transform((value) => value === "true"),
   LINKEDIN_SCHEDULE_HORIZON_DAYS: z.coerce.number().int().min(1).max(365).default(90),
   LINKEDIN_SCHEDULE_LATE_WINDOW_MINUTES: z.coerce.number().int().min(1).max(1440).default(60),
+  GITHUB_ENABLED: z.enum(["true", "false"]).default("false").transform((value) => value === "true"),
+  GITHUB_APP_CLIENT_ID: z.string().trim().min(1).optional(),
+  GITHUB_APP_CLIENT_SECRET: z.string().min(1).optional(),
+  GITHUB_APP_ID: z.coerce.number().int().positive().optional(),
+  GITHUB_APP_SLUG: z.string().trim().regex(/^[A-Za-z0-9-]+$/).optional(),
+  GITHUB_APP_PRIVATE_KEY: z.string().min(1).optional(),
+  GITHUB_REDIRECT_URI: z.string().url().optional(),
+  GITHUB_TOKEN_ENCRYPTION_KEY: z.string().optional(),
+  GITHUB_SYNC_ENABLED: z.enum(["true", "false"]).default("false").transform((value) => value === "true"),
+  GITHUB_SYNC_INTERVAL_MINUTES: z.coerce.number().int().min(1).max(1440).default(15),
+  GITHUB_SYNC_MAX_PAGES_PER_PASS: z.coerce.number().int().min(1).max(100).default(3),
+  GITHUB_INITIAL_HISTORY_DAYS: z.coerce.number().int().min(1).max(3650).default(90),
 });
 const pricingConfigSchema = z.array(z.object({
   model: z.string().min(1),
@@ -91,5 +103,14 @@ if (env.LINKEDIN_ENABLED) {
   const key = Buffer.from(env.LINKEDIN_TOKEN_ENCRYPTION_KEY, "base64");
   if (key.length !== 32) {
     throw new Error("LINKEDIN_TOKEN_ENCRYPTION_KEY must be a base64-encoded 32-byte key.");
+  }
+}
+
+if (env.GITHUB_ENABLED) {
+  if (!env.GITHUB_APP_CLIENT_ID || !env.GITHUB_APP_CLIENT_SECRET || !env.GITHUB_APP_ID || !env.GITHUB_APP_SLUG || !env.GITHUB_APP_PRIVATE_KEY || !env.GITHUB_REDIRECT_URI) {
+    throw new Error("GitHub configuration is incomplete.");
+  }
+  if (!env.GITHUB_TOKEN_ENCRYPTION_KEY || Buffer.from(env.GITHUB_TOKEN_ENCRYPTION_KEY, "base64").length !== 32) {
+    throw new Error("GITHUB_TOKEN_ENCRYPTION_KEY must be a base64-encoded 32-byte key.");
   }
 }

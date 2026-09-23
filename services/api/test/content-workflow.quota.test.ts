@@ -1,10 +1,80 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { AppError } from "../src/errors/app-error.js";
-import { advanceWorkflowProviderStep } from "../src/services/content-workflow.service.js";
+import { advanceWorkflowProviderStep, mapWorkflowGenerationCitations } from "../src/services/content-workflow.service.js";
 import type { UsageRepositoryBoundary } from "../src/services/usage.service.js";
+import { ResearchBriefModel } from "../src/models/research-brief.model.js";
+import { DraftReviewModel } from "../src/models/draft-review.model.js";
+import { Types } from "mongoose";
 
 const owner = "507f1f77bcf86cd799439011";
+
+test("in-progress research and review records satisfy required persistence fields", () => {
+  const signalId = new Types.ObjectId();
+  const generationId = new Types.ObjectId();
+  const variationId = new Types.ObjectId();
+  const brief = new ResearchBriefModel({
+    ownerId: owner,
+    requestId: "research-request",
+    inputFingerprint: "fingerprint",
+    signalId,
+    signalRevision: 1,
+    sourceVersions: [],
+    evidence: [],
+    brief: { topicSummary: "Research in progress.", talkingPoints: [], claimAssessments: [], missingInformation: [], questions: [], limitations: [] },
+    status: "running",
+    model: "pending",
+  });
+  const review = new DraftReviewModel({
+    ownerId: owner,
+    requestId: "review-request",
+    inputFingerprint: "fingerprint",
+    signalId,
+    generationId,
+    variationId,
+    researchBriefId: new Types.ObjectId(),
+    draftContentHash: "hash",
+    draftContent: "draft",
+    briefSnapshot: [],
+    findings: [],
+    summary: "Review in progress.",
+    status: "running",
+    model: "pending",
+  });
+  assert.equal(brief.validateSync(), undefined);
+  assert.equal(review.validateSync(), undefined);
+  brief.set({ brief: { topicSummary: "Completed.", talkingPoints: [], claimAssessments: [], missingInformation: [], questions: [], limitations: [] }, status: "succeeded", model: "research-model" });
+  review.set({ summary: "Completed.", status: "succeeded", model: "review-model" });
+  assert.equal(brief.validateSync(), undefined);
+  assert.equal(review.validateSync(), undefined);
+});
+
+test("workflow generation citations resolve provider chunk IDs", () => {
+  const result = mapWorkflowGenerationCitations(
+    [{
+      evidenceId: "e1",
+      sourceId: "507f1f77bcf86cd799439012",
+      title: "Source",
+      contentVersion: 1,
+      chunkId: "chunk-1",
+      chunkIndex: 0,
+      text: "Evidence",
+      startOffset: 0,
+      endOffset: 8,
+      score: 0.9,
+    }],
+    {
+      model: "test-model",
+      variations: [
+        { angle: "technical_depth", content: "t".repeat(100), citations: ["chunk-1"] },
+        { angle: "learning_story", content: "l".repeat(100), citations: ["chunk-1"] },
+        { angle: "professional_impact", content: "p".repeat(100), citations: ["chunk-1"] },
+      ],
+    },
+    new Map([["507f1f77bcf86cd799439012", "Source"]]),
+  );
+  assert.equal(result.variations[0]?.citations[0]?.chunkId, "chunk-1");
+});
 
 test("workflow generation and review steps admit once and do not replay uncertain work", async () => {
   const reservations = new Map<string, { id: string; status: string }>();

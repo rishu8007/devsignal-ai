@@ -168,7 +168,7 @@ export function mapWorkflowGenerationCitations(
     true,
     new Map(
       researchEvidence.map((item) => [
-        item.evidenceId,
+        item.chunkId,
         {
           sourceId: item.sourceId,
           title: sourceTitles.get(item.sourceId) ?? item.title,

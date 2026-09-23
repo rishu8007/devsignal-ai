@@ -12,6 +12,11 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Generated Playwright reports and traces are not source files.
+    "playwright-report/**",
+    "playwright-report-integration/**",
+    "test-results/**",
+    "test-results-integration/**",
   ]),
 ]);
 

@@ -59,6 +59,18 @@ services:
       LINKEDIN_SCHEDULER_ENABLED: ${LINKEDIN_SCHEDULER_ENABLED:-false}
       LINKEDIN_SCHEDULE_HORIZON_DAYS: ${LINKEDIN_SCHEDULE_HORIZON_DAYS:-90}
       LINKEDIN_SCHEDULE_LATE_WINDOW_MINUTES: ${LINKEDIN_SCHEDULE_LATE_WINDOW_MINUTES:-60}
+      GITHUB_ENABLED: ${GITHUB_ENABLED:-false}
+      GITHUB_APP_CLIENT_ID: ${GITHUB_APP_CLIENT_ID:-}
+      GITHUB_APP_CLIENT_SECRET: ${GITHUB_APP_CLIENT_SECRET:-}
+      GITHUB_APP_ID: ${GITHUB_APP_ID:-}
+      GITHUB_APP_SLUG: ${GITHUB_APP_SLUG:-}
+      GITHUB_APP_PRIVATE_KEY: ${GITHUB_APP_PRIVATE_KEY:-}
+      GITHUB_REDIRECT_URI: ${GITHUB_REDIRECT_URI:-http://localhost:4000/api/v1/connections/github/callback}
+      GITHUB_TOKEN_ENCRYPTION_KEY: ${GITHUB_TOKEN_ENCRYPTION_KEY:-}
+      GITHUB_SYNC_ENABLED: ${GITHUB_SYNC_ENABLED:-false}
+      GITHUB_SYNC_INTERVAL_MINUTES: ${GITHUB_SYNC_INTERVAL_MINUTES:-15}
+      GITHUB_SYNC_MAX_PAGES_PER_PASS: ${GITHUB_SYNC_MAX_PAGES_PER_PASS:-3}
+      GITHUB_INITIAL_HISTORY_DAYS: ${GITHUB_INITIAL_HISTORY_DAYS:-90}
     ports:
       - "127.0.0.1:${API_PORT:-4000}:4000"
     depends_on:
@@ -66,6 +78,14 @@ services:
         condition: service_healthy
       ai:
         condition: service_healthy
+
+  github-sync:
+    profiles: ["github-sync"]
+    extends:
+      service: api
+    command: ["node", "dist/github-sync-worker.js"]
+    ports: []
+    restart: unless-stopped
 
   web:
     profiles: ["app"]

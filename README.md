@@ -74,6 +74,45 @@ and [member authorization documentation](https://learn.microsoft.com/en-us/linke
 Live compatibility, product approval, and real-provider behavior remain
 deferred; all local tests use mocked provider responses.
 
+## GitHub connection and Work activity
+
+GitHub account connection uses a GitHub App installation flow followed by the
+App's user-authorization flow. The server binds both callbacks to the
+authenticated DevSignal session, verifies the authorized GitHub user can see
+the selected installation, and then stores only an encrypted installation
+token. Configure `GITHUB_ENABLED=true`, `GITHUB_APP_CLIENT_ID`,
+`GITHUB_APP_CLIENT_SECRET`, App ID, App slug, PEM private key, the callback
+`/api/v1/connections/github/callback`, and a base64-encoded 32-byte
+`GITHUB_TOKEN_ENCRYPTION_KEY`. The App must be configured with repository
+metadata/read permissions appropriate to the intended private-repository
+access. Tokens are encrypted and never returned to the browser.
+The implementation follows GitHub's
+[App user-authorization flow](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/authenticating-with-a-github-app-on-behalf-of-a-user)
+and [installation-token flow](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/authenticating-as-a-github-app-installation).
+
+After connection, repository selection is persisted server-side. Work sync
+imports an initial `GITHUB_INITIAL_HISTORY_DAYS` window, follows provider
+pagination in bounded passes, and persists per-repository/per-activity-type
+progress so later passes resume without silently truncating history. GitHub
+rate-limit reset information becomes a persisted next-eligible time. Manual
+sync is always available; the optional worker is enabled separately with
+`GITHUB_SYNC_ENABLED=true` and `GITHUB_SYNC_INTERVAL_MINUTES`. Activity is
+never sent to AI or published automatically. Users must explicitly convert an
+activity into a Signal, and repeated or concurrent conversion returns the
+existing Signal or a recoverable conflict. Disconnect revokes the local
+connection generation, stops later syncs from that connection, and retains
+already imported activity as historical records with their provenance; a future
+connection cannot attach stale results.
+
+The packaged Compose worker is an opt-in `github-sync` profile; run it
+together with the `app` profile only when the GitHub sync environment is
+explicitly enabled.
+
+GitHub documents App authentication as three distinct modes: App JWT,
+installation access tokens, and user access tokens. This feature uses the App
+JWT to exchange an installation for an installation access token:
+[About authentication with a GitHub App](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/about-authentication-with-a-github-app).
+
 Scheduled LinkedIn publishing is separately disabled by default with
 `LINKEDIN_SCHEDULER_ENABLED=false`. When enabled, the same immutable
 publication snapshot and duplicate operation key are used for scheduling and
@@ -266,6 +305,10 @@ database and removes only its own Compose project, container, and named volume
 after the tests. It never touches the normal development Compose project or
 volumes. Docker Desktop, Node dependencies, and a working API TypeScript
 toolchain are required.
+The isolated API integration runner includes both
+`mongodb.integration.test.ts` and `github-connection.integration.test.ts`;
+the ordinary API test runner excludes both because they require the guarded
+MongoDB environment.
 
 ### Local browser integration suite
 
@@ -288,7 +331,12 @@ variations, approval persistence, calendar navigation, and usage display.
 It also covers notification read-state and owner isolation, analytics snapshot
 CRUD and weighted-rate coverage, local text knowledge import cancellation/save,
 and logout/account isolation. Research, workflow, and LinkedIn publishing
-browser journeys remain separate milestones.
+browser journeys are covered by the same isolated harness for selected-source
+research evidence, technical draft review, and human-gated content workflows.
+Those browser tests use the deterministic local AI HTTP adapter; they do not
+claim to exercise Python LangGraph or checkpointer restart durability.
+The runner's increased login limit is guarded by both `NODE_ENV=test` and
+`BROWSER_INTEGRATION=true`, so it cannot activate in production.
 
 ## Architecture
 

@@ -42,6 +42,7 @@ import { LinkedInScheduledItems } from "@/components/dashboard/linkedin-schedule
 import { NotificationBell } from "@/components/dashboard/notification-bell";
 import { AnalyticsView } from "@/components/dashboard/analytics-view";
 import { UsageView } from "@/components/dashboard/usage-view";
+import { GithubConnectionCard } from "@/components/dashboard/github-connection-card";
 
 export function DashboardWorkspace() {
   const { invalidateSession, status: authStatus } = useAuth();
@@ -845,7 +846,8 @@ export function DashboardWorkspace() {
         onMutationPendingChange={setProfileMutationPending}
       />
       <TopicPlannerView active={activeTab === "planner"} />
-      <LinkedInConnectionsView active={activeTab === "connections"} />
+      <LinkedInConnectionsView active={activeTab === "connections"} onNavigate={setActiveTab} />
+      <GithubConnectionCard active={activeTab === "connections"} />
       <AnalyticsView active={activeTab === "analytics"} />
       <UsageView active={activeTab === "usage"} />
       {researchSignal && <ResearchBriefView signal={researchSignal} onClose={() => setResearchSignal(null)} />}

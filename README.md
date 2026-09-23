@@ -800,6 +800,81 @@ off-machine copy and rehearse restoration into a separate project. No
 destructive cleanup command belongs in the normal workflow; in particular,
 do not use `down -v` or volume pruning for backup recovery.
 
+#### Automated production backups
+
+The optional Linux wrapper
+[`scripts/automated-backup.sh`](D:/devsignal-ai/scripts/automated-backup.sh)
+calls the existing backup script and reads
+`WORKFLOW_CHECKPOINT_DATABASE` from the configured deployment environment.
+Install it with a service account and make it executable; do not install or
+enable the example units automatically:
+
+```bash
+chmod 700 /opt/devsignal-ai/scripts/automated-backup.sh
+cp deploy/systemd/devsignal-backup.service.example /etc/systemd/system/devsignal-backup.service
+cp deploy/systemd/devsignal-backup.timer.example /etc/systemd/system/devsignal-backup.timer
+```
+
+Configure the service through a separately protected
+`/etc/devsignal/backup.conf` (mode `0600`). Supported settings include:
+
+```text
+DEVSIGNAL_ROOT=/opt/devsignal-ai
+DEVSIGNAL_ENV_FILE=/opt/devsignal-ai/.env.deploy
+DEVSIGNAL_BACKUP_ROOT=/var/lib/devsignal/backups
+DEVSIGNAL_BACKUP_LOCK=/var/lock/devsignal-backup.lock
+DEVSIGNAL_COMPOSE_PROJECT=devsignal-https
+DEVSIGNAL_COMPOSE_FILE=/opt/devsignal-ai/docker-compose.deploy.yml
+DEVSIGNAL_QDRANT_COLLECTION=devsignal_knowledge_chunks
+DEVSIGNAL_BACKUP_RETENTION=7
+# Optional, mutually required:
+DEVSIGNAL_BACKUP_SSH_DESTINATION=backupuser@backup-host
+DEVSIGNAL_BACKUP_REMOTE_ROOT=/srv/devsignal/backups
+```
+
+Each run uses a UTC timestamp directory, `umask 077`, a non-overlapping
+`flock`, and the configured workflow database. The backup stops only currently
+running API, AI, LinkedIn scheduler, and GitHub sync writer services, then
+resumes exactly those services after success or failure. This is expected
+application downtime for the archive window; the lock prevents concurrent
+runs.
+
+When SSH copying is configured, the wrapper uses normal `scp` and `ssh`
+verification with the host's normal known-host policy. It copies to a
+`.partial` remote directory, verifies every transferred file's SHA-256, and
+renames it to the final timestamp only afterward. Failures leave the complete
+local backup available for retry and do not prune it. No passwords, private
+keys, or production environment values are copied into manifests; SSH keys,
+encryption keys, and production configuration require separate secure recovery
+storage.
+
+Retention considers only complete, checksum-valid manifests, never removes the
+newest successful backup, preserves incomplete backups and unrelated files,
+and requires a verified remote copy before deleting a local backup when
+off-server copying is enabled. Preview retention and the backup plan without
+Docker or SSH:
+
+```bash
+DEVSIGNAL_ROOT=/opt/devsignal-ai \
+DEVSIGNAL_ENV_FILE=/opt/devsignal-ai/.env.deploy \
+DEVSIGNAL_BACKUP_ROOT=/var/lib/devsignal/backups \
+/opt/devsignal-ai/scripts/automated-backup.sh --dry-run
+```
+
+The example schedule runs once daily at 03:30 UTC:
+
+```bash
+systemctl daemon-reload
+systemctl enable --now devsignal-backup.timer
+systemctl status devsignal-backup.timer
+```
+
+Those commands are operator actions only; this repository does not install,
+enable, or start the timer. Review failures with
+`journalctl -u devsignal-backup.service`. Restores remain deliberate isolated
+operations using `scripts/restore.mjs`; restored API, AI, web, scheduler, and
+sync workers stay stopped until an operator explicitly starts them.
+
 #### Completed local rehearsal record
 
 On 2026-09-17, application commit metadata was recorded in the generated

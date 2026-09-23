@@ -1,0 +1,11 @@
+[Unit]
+Description=Run the DevSignal production backup daily
+
+[Timer]
+OnCalendar=*-*-* 03:30:00 UTC
+Persistent=true
+RandomizedDelaySec=15m
+Unit=devsignal-backup.service
+
+[Install]
+WantedBy=timers.target

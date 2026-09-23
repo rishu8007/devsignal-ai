@@ -12,7 +12,7 @@ export interface UsageSummary {
   pricingConfigured: boolean;
 }
 export function getUsage(signal?: AbortSignal) {
-  return request<{ success: true; data: UsageSummary }>("/api/v1/usage", { method: "GET", signal }, (value): value is { success: true; data: UsageSummary } => {
+  return request<{ success: true; data: UsageSummary }>("/usage", { method: "GET", signal }, (value): value is { success: true; data: UsageSummary } => {
     return typeof value === "object" && value !== null && "success" in value && value.success === true && "data" in value;
   }).then((response) => response.data);
 }

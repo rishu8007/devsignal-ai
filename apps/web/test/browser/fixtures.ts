@@ -91,6 +91,10 @@ export async function installApiFixtures(page: Page, searchBody?: object) {
       await route.fulfill({ json: EMPTY_SOURCES });
       return;
     }
+    if (request.method() === "GET" && path === "/notifications/unread-count") {
+      await route.fulfill({ json: { success: true, data: { unread: 0 } } });
+      return;
+    }
     if (request.method() === "POST" && path === "/sources/search") {
       if (searchBody !== undefined && JSON.stringify(body) !== JSON.stringify(searchBody)) {
         fixtures.unexpected.push(`Unexpected search body: ${JSON.stringify(body)}`);

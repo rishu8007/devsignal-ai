@@ -267,6 +267,28 @@ after the tests. It never touches the normal development Compose project or
 volumes. Docker Desktop, Node dependencies, and a working API TypeScript
 toolchain are required.
 
+### Local browser integration suite
+
+The browser integration milestone runs the packaged Next.js web application
+against a real local API and the same isolated MongoDB project. The AI HTTP
+boundary is replaced by the test-only deterministic adapter in
+`scripts/browser-integration-ai.mjs`; LinkedIn remains disabled and no
+external provider requests are possible. Run:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\run-browser-integration.ps1
+```
+
+This starts only the dedicated MongoDB container, localhost API/web services,
+and the test adapter, then removes the resources it created. Playwright
+screenshots and traces remain under ignored
+`apps\web\test-results-integration\` output on failure. The suite currently
+covers real registration/login, signal persistence, three deterministic draft
+variations, approval persistence, calendar navigation, and usage display.
+The broader research, workflow, LinkedIn, analytics, notifications, and
+knowledge-import journeys remain covered by focused API or UI-boundary tests,
+not this real-service browser suite.
+
 ## Architecture
 
 | Area | Location | Responsibility |

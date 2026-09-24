@@ -50,7 +50,7 @@ services:
       LINKEDIN_ENABLED: ${LINKEDIN_ENABLED:-false}
       LINKEDIN_CLIENT_ID: ${LINKEDIN_CLIENT_ID:-}
       LINKEDIN_CLIENT_SECRET: ${LINKEDIN_CLIENT_SECRET:-}
-      LINKEDIN_REDIRECT_URI: ${LINKEDIN_REDIRECT_URI:-http://localhost:4000/api/v1/connections/linkedin/callback}
+      LINKEDIN_REDIRECT_URI: ${LINKEDIN_REDIRECT_URI:-}
       LINKEDIN_TOKEN_ENCRYPTION_KEY: ${LINKEDIN_TOKEN_ENCRYPTION_KEY:-}
       LINKEDIN_SCOPES: ${LINKEDIN_SCOPES:-openid profile email}
       LINKEDIN_POSTING_SCOPES: ${LINKEDIN_POSTING_SCOPES:-openid profile email w_member_social}
@@ -65,7 +65,7 @@ services:
       GITHUB_APP_ID: ${GITHUB_APP_ID:-}
       GITHUB_APP_SLUG: ${GITHUB_APP_SLUG:-}
       GITHUB_APP_PRIVATE_KEY: ${GITHUB_APP_PRIVATE_KEY:-}
-      GITHUB_REDIRECT_URI: ${GITHUB_REDIRECT_URI:-http://localhost:4000/api/v1/connections/github/callback}
+      GITHUB_REDIRECT_URI: ${GITHUB_REDIRECT_URI:-}
       GITHUB_TOKEN_ENCRYPTION_KEY: ${GITHUB_TOKEN_ENCRYPTION_KEY:-}
       GITHUB_SYNC_ENABLED: ${GITHUB_SYNC_ENABLED:-false}
       GITHUB_SYNC_INTERVAL_MINUTES: ${GITHUB_SYNC_INTERVAL_MINUTES:-15}
@@ -85,6 +85,8 @@ services:
       service: api
     command: ["node", "services/api/dist/github-sync-worker.js"]
     ports: []
+    healthcheck:
+      disable: true
     restart: unless-stopped
 
   web:

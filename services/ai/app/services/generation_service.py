@@ -1,7 +1,7 @@
 from collections.abc import Sequence
 
 from app.errors import ApplicationError
-from app.providers.openai_provider import ProviderError
+from app.providers.errors import ProviderError
 from app.providers.protocol import GenerationProvider
 from app.schemas.common import UsageMetadata
 from app.schemas.generation import (

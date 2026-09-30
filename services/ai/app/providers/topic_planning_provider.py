@@ -3,7 +3,7 @@ from typing import Protocol
 
 from pydantic import BaseModel
 
-from app.providers.openai_provider import ProviderError
+from app.providers.errors import ProviderError
 from app.schemas.common import UsageMetadata
 from app.schemas.topic_planning import TopicPlanData, TopicPlanRequest
 

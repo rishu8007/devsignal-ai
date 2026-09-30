@@ -12,6 +12,7 @@ from openai import (
     RateLimitError,
 )
 
+from app.providers.errors import EmbeddingProviderError
 from app.schemas.common import UsageMetadata
 
 EMBEDDING_MODEL = "text-embedding-3-small"
@@ -39,16 +40,6 @@ class EmbeddingsAPI(Protocol):
         dimensions: int,
         encoding_format: Literal["float"],
     ) -> EmbeddingResponse: ...
-
-
-class EmbeddingProvider(Protocol):
-    async def embed(self, texts: Sequence[str]) -> list[list[float]]: ...
-
-
-class EmbeddingProviderError(Exception):
-    def __init__(self, kind: str) -> None:
-        self.kind = kind
-        super().__init__(kind)
 
 
 class OpenAIEmbeddingProvider:

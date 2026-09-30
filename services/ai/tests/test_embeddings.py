@@ -10,9 +10,9 @@ from app.providers.embedding_provider import (
     MAX_EMBEDDING_BATCH_CODE_POINTS,
     MAX_EMBEDDING_BATCH_SIZE,
     MAX_EMBEDDING_TEXT_LENGTH,
-    EmbeddingProviderError,
     OpenAIEmbeddingProvider,
 )
+from app.providers.errors import EmbeddingProviderError
 
 
 @dataclass

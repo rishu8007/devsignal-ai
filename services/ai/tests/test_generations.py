@@ -14,7 +14,8 @@ from app.api.dependencies import require_internal_api_key
 from app.errors import ApplicationError
 from app.main import app
 from app.prompts import SYSTEM_PROMPT
-from app.providers.openai_provider import OpenAIProvider, ProviderError
+from app.providers.errors import ProviderError
+from app.providers.openai_provider import OpenAIProvider
 from app.schemas.generation import (
     GenerationRequest,
     GenerationVariation,

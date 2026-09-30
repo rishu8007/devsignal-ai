@@ -12,8 +12,9 @@ from app.providers.embedding_provider import (
     EMBEDDING_MODEL,
     MAX_EMBEDDING_BATCH_CODE_POINTS,
     MAX_EMBEDDING_BATCH_SIZE,
-    EmbeddingProviderError,
 )
+from app.providers.errors import EmbeddingProviderError
+from app.providers.protocol import EmbeddingProvider
 from app.repositories.qdrant_repository import (
     ChunkVectorRecord,
     QdrantRepositoryError,
@@ -80,10 +81,6 @@ class EmbeddingConfiguration:
             raise ValueError("embedding batch input limit must be positive")
 
 
-class EmbeddingClient(Protocol):
-    async def embed(self, texts: Sequence[str]) -> list[list[float]]: ...
-
-
 class VectorWriter(Protocol):
     async def ensure_collection(self) -> None: ...
 
@@ -110,7 +107,7 @@ class SourceIndexingError(Exception):
 class SourceIndexingService:
     def __init__(
         self,
-        embedding_provider: EmbeddingClient,
+        embedding_provider: EmbeddingProvider,
         vector_repository: VectorWriter,
         embedding_configuration: EmbeddingConfiguration,
     ) -> None:

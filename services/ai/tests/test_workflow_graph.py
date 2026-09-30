@@ -3,9 +3,12 @@ import asyncio
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.types import Command
 
-from app.providers.openai_provider import ProviderGenerationResult
 from app.schemas.draft_review import DraftReviewData
-from app.schemas.generation import GenerationVariation, ProviderGenerationOutput
+from app.schemas.generation import (
+    GenerationVariation,
+    ProviderGenerationOutput,
+    ProviderGenerationResult,
+)
 from app.schemas.research_brief import ResearchBriefData
 from app.workflow_graph import build_workflow_graph
 

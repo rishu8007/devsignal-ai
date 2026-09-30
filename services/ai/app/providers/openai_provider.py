@@ -10,6 +10,7 @@ from openai import (
 )
 
 from app.prompts import SYSTEM_PROMPT, build_user_prompt
+from app.providers.errors import ProviderError
 from app.schemas.common import UsageMetadata
 from app.schemas.generation import (
     GenerationRequest,
@@ -32,12 +33,6 @@ class ResponsesAPI(Protocol):
         input: list[dict[str, str]],
         text_format: type[ProviderGenerationOutput],
     ) -> ParsedResponse: ...
-
-
-class ProviderError(Exception):
-    def __init__(self, kind: str) -> None:
-        self.kind = kind
-        super().__init__(kind)
 
 
 class OpenAIProvider:

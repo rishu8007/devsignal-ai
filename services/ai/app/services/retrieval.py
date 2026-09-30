@@ -10,14 +10,15 @@ from app.providers.embedding_provider import (
     EMBEDDING_DIMENSIONS,
     EMBEDDING_MODEL,
     MAX_EMBEDDING_TEXT_LENGTH,
-    EmbeddingProviderError,
 )
+from app.providers.errors import EmbeddingProviderError
+from app.providers.protocol import EmbeddingProvider
 from app.repositories.qdrant_repository import (
     ChunkSearchResult,
     QdrantRepositoryError,
 )
 from app.schemas.common import UsageMetadata
-from app.services.source_indexing import EmbeddingClient, EmbeddingConfiguration
+from app.services.source_indexing import EmbeddingConfiguration
 
 MAX_RETRIEVAL_RESULT_COUNT = 20
 OWNER_ID_PATTERN = re.compile(r"^[0-9a-fA-F]{24}$")
@@ -57,7 +58,7 @@ class RetrievalError(Exception):
 class RetrievalService:
     def __init__(
         self,
-        embedding_provider: EmbeddingClient,
+        embedding_provider: EmbeddingProvider,
         vector_searcher: VectorSearcher,
         embedding_configuration: EmbeddingConfiguration | None = None,
         max_result_count: int = MAX_RETRIEVAL_RESULT_COUNT,

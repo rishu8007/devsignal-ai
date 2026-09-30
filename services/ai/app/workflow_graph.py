@@ -4,7 +4,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
 
 from app.providers.draft_review_provider import DraftReviewProvider
-from app.providers.openai_provider import OpenAIProvider
+from app.providers.protocol import GenerationProvider
 from app.providers.research_brief_provider import ResearchBriefProvider
 from app.schemas.draft_review import DraftReviewRequest
 from app.schemas.generation import GenerationRequest
@@ -27,7 +27,7 @@ class WorkflowState(TypedDict, total=False):
 
 def build_workflow_graph(
     research_provider: ResearchBriefProvider,
-    generation_provider: OpenAIProvider,
+    generation_provider: GenerationProvider,
     review_provider: DraftReviewProvider,
     checkpointer: Any,
 ) -> Any:

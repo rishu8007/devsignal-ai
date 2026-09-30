@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 
 import pytest
 
-from app.providers.embedding_provider import EmbeddingProviderError
+from app.providers.errors import EmbeddingProviderError
 from app.repositories.qdrant_repository import (
     ChunkVectorRecord,
     QdrantRepositoryError,

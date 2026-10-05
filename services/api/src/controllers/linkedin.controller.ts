@@ -31,6 +31,16 @@ export async function linkedinPostingConsent(request: Request, response: Respons
 }
 
 export async function linkedinCallback(request: Request, response: Response): Promise<void> {
+  console.info(JSON.stringify({
+    event: "linkedin_oauth_callback_arrived",
+    queryFields: {
+      state: typeof request.query.state === "string",
+      code: typeof request.query.code === "string",
+      error: typeof request.query.error === "string",
+      errorDescription: typeof request.query.error_description === "string",
+    },
+    sessionCookiePresent: typeof request.cookies?.[env.AUTH_COOKIE_NAME] === "string",
+  }));
   const redirect = await completeLinkedInConnection(
     typeof request.query.state === "string" ? request.query.state : undefined,
     typeof request.query.code === "string" ? request.query.code : undefined,

@@ -158,11 +158,13 @@ class SourceIndexingService:
                 )
                 if hasattr(self._embedding_provider, "embed_with_usage"):
                     batch_vectors, provider_usage = await self._embedding_provider.embed_with_usage(
-                        [chunk.text for chunk in batch]
+                        [chunk.text for chunk in batch],
+                        purpose="document",
                     )
                 else:
                     batch_vectors = await self._embedding_provider.embed(
-                        [chunk.text for chunk in batch]
+                        [chunk.text for chunk in batch],
+                        purpose="document",
                     )
                     provider_usage = None
                 if provider_usage is not None:
@@ -276,7 +278,11 @@ def _validate_batch_vectors(
         for value in vector:
             if isinstance(value, bool) or not isinstance(value, (int, float)):
                 raise SourceIndexingError("invalid_embedding")
-            if not math.isfinite(float(value)):
+            try:
+                numeric_value = float(value)
+            except OverflowError as exception:
+                raise SourceIndexingError("invalid_embedding") from exception
+            if not math.isfinite(numeric_value):
                 raise SourceIndexingError("invalid_embedding")
 
 

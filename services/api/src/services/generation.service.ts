@@ -38,6 +38,10 @@ import { admitAiOperation, completeAiOperation, markAiDispatched, markAiUncertai
 // This guard is process-local; distributed coordination is deferred to a later milestone.
 const inFlight = new Map<string, Promise<GenerationOperationResult>>();
 
+export function hasInFlightGeneration(ownerId: string, signalId: string): boolean {
+  return inFlight.has(`${ownerId}:${signalId}`);
+}
+
 // Mirrors the AI service's own context bounds so requests never get rejected by the
 // downstream contract; also matches the /sources/search default candidate ceiling.
 const MAX_KNOWLEDGE_CANDIDATES = 5;
@@ -95,6 +99,7 @@ export async function createGenerationForSignal(
   repository: GenerationRepositoryBoundary = defaultRepository,
   retrieval: RetrievalBoundary = defaultRetrievalBoundary,
   clock: () => Date = () => new Date(),
+  correlationId = "unknown",
 ): Promise<GenerationOperationResult> {
   const signal = await findSignalByOwner(ownerId, signalId, repository);
   // The existing-Generation check always happens before any retrieval or provider call,
@@ -144,6 +149,7 @@ export async function createGenerationForSignal(
     retrieval,
     repository.reserveSignalForGeneration ? leaseId : null,
     clock,
+    correlationId,
   );
   inFlight.set(key, operation);
   let generationCommitted = false;
@@ -292,6 +298,7 @@ async function generateAndPersist(
   retrieval: RetrievalBoundary,
   leaseId: string | null,
   clock: () => Date,
+  correlationId: string,
 ): Promise<GenerationOperationResult> {
   const source: GenerationSource = {
     topic: signal.topic,
@@ -325,8 +332,25 @@ async function generateAndPersist(
   }
 
   const trackUsage = repository === defaultRepository;
-  const admission = trackUsage ? await admitAiOperation(ownerId, `generation:${signalId}`, "generation", clock()) : null;
+  const admission = trackUsage
+    ? await admitAiOperation(
+        ownerId,
+        generationUsageOperationKey(signalId, leaseId ?? randomUUID()),
+        "generation",
+        clock(),
+        undefined,
+        `generation:${signalId}:`,
+      )
+    : null;
   if (admission?.duplicate) {
+    console.info(JSON.stringify({
+      event: "ai_operation_rejected",
+      correlationId,
+      signalId,
+      branch: "generation_admission_duplicate",
+      operationId: admission.id,
+      status: admission.status,
+    }));
     throw new AppError(409, "AI_OPERATION_IN_PROGRESS", "This AI operation is already in progress");
   }
   if (admission) await markAiDispatched(admission.id);
@@ -334,7 +358,7 @@ async function generateAndPersist(
   try {
     rawResult = await aiClient.generate(source, contextChunks);
   } catch (error) {
-    if (error instanceof AppError && [504, 502].includes(error.statusCode)) {
+    if (shouldMarkAiOperationUncertain(error)) {
       if (admission) await markAiUncertain(admission.id);
     } else {
       if (admission) await releaseAiOperation(admission.id);
@@ -359,6 +383,7 @@ async function generateAndPersist(
         "The generation reservation expired or was superseded before drafts could be saved",
       );
     }
+
   } else if (
     leaseId &&
     repository.hasActiveSignalGenerationLease &&
@@ -402,6 +427,18 @@ async function generateAndPersist(
     }
     throw new UncertainGenerationWriteError(error);
   }
+}
+
+export function shouldMarkAiOperationUncertain(error: unknown): boolean {
+  return (
+    error instanceof AppError &&
+    [504, 502].includes(error.statusCode) &&
+    error.code !== "AI_INVALID_RESPONSE"
+  );
+}
+
+export function generationUsageOperationKey(signalId: string, leaseId: string): string {
+  return `generation:${signalId}:${leaseId}`;
 }
 
 async function reconcileSignalProtection(

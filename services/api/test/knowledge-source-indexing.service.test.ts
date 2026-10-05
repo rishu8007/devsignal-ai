@@ -47,7 +47,7 @@ function validResult() {
     sourceId,
     contentVersion: 1,
     chunkerVersion: "chunker-v1",
-    embeddingModel: "text-embedding-3-small",
+    embeddingModel: "gemini-embedding-2",
     dimensions: 1536,
     indexedChunkCount: 1,
   };
@@ -120,7 +120,7 @@ function lifecycleRepository(initial = source(), now: () => Date = () => new Dat
   };
 }
 
-test("reuses an indexed source version without calling the AI service", async () => {
+test("reuses a Gemini-indexed source version without calling the AI service", async () => {
   let calls = 0;
   const result = await indexKnowledgeSourceForUser(
     ownerId,
@@ -136,7 +136,7 @@ test("reuses an indexed source version without calling the AI service", async ()
         processingStatus: "indexed",
         indexedContentVersion: 1,
         indexedChunkerVersion: "chunker-v1",
-        indexedEmbeddingModel: "text-embedding-3-small",
+        indexedEmbeddingModel: "gemini-embedding-2",
         indexedDimensions: 1536,
         indexedChunkCount: 1,
       }),
@@ -145,6 +145,96 @@ test("reuses an indexed source version without calling the AI service", async ()
 
   assert.equal(result.processingStatus, "indexed");
   assert.equal(calls, 0);
+});
+
+test("re-indexes an OpenAI-indexed source for Gemini", async () => {
+  let calls = 0;
+  const result = await indexKnowledgeSourceForUser(
+    ownerId,
+    sourceId,
+    {
+      index: async () => {
+        calls += 1;
+        return validResult();
+      },
+    },
+    repositoryWith(
+      source({
+        processingStatus: "indexed",
+        indexedContentVersion: 1,
+        indexedChunkerVersion: "chunker-v1",
+        indexedEmbeddingModel: "text-embedding-3-small",
+        indexedDimensions: 1536,
+        indexedChunkCount: 1,
+      }),
+    ),
+  );
+
+  assert.equal(result.processingStatus, "indexed");
+  assert.equal(calls, 1);
+});
+
+test("re-indexes indexed sources with stale or incomplete embedding metadata", async () => {
+  for (const metadata of [
+    { indexedEmbeddingModel: "gemini-embedding-2", indexedDimensions: 768 },
+    { indexedEmbeddingModel: null, indexedDimensions: 1536 },
+  ]) {
+    let calls = 0;
+    await indexKnowledgeSourceForUser(
+      ownerId,
+      sourceId,
+      {
+        index: async () => {
+          calls += 1;
+          return validResult();
+        },
+      },
+      repositoryWith(
+        source({
+          processingStatus: "indexed",
+          indexedContentVersion: 1,
+          indexedChunkerVersion: "chunker-v1",
+          indexedChunkCount: 1,
+          ...metadata,
+        }),
+      ),
+    );
+    assert.equal(calls, 1);
+  }
+});
+
+test("re-indexes when the source content version changes", async () => {
+  let calls = 0;
+  await indexKnowledgeSourceForUser(
+    ownerId,
+    sourceId,
+    {
+      index: async () => {
+        calls += 1;
+        return { ...validResult(), contentVersion: 2 };
+      },
+    },
+    repositoryWith(
+      source({
+        processingStatus: "indexed",
+        contentVersion: 2,
+        indexedContentVersion: 1,
+        indexedChunkerVersion: "chunker-v1",
+        indexedEmbeddingModel: "gemini-embedding-2",
+        indexedDimensions: 1536,
+        indexedChunkCount: 1,
+      }),
+      {
+        claimKnowledgeSourceIndexing: async (_owner, _source, _version, attempt) =>
+          source({
+            contentVersion: 2,
+            processingStatus: "indexing",
+            indexingAttemptId: attempt,
+          }),
+      },
+    ),
+  );
+  assert.equal(calls, 1);
 });
 
 test("claims, indexes, and finalizes with source-owned content", async () => {

@@ -50,13 +50,18 @@ const pricingSchema = z.object({
 }).strict();
 const pricingConfigSchema = z.array(pricingSchema).max(100);
 export function quotaWindow(now = new Date()) { const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())); return { start, resetAt: new Date(start.getTime() + 86400000) }; }
-export async function admitAiOperation(ownerId: string, operationKey: string, operationType: AiOperationType, now = new Date(), repository: UsageRepositoryBoundary = defaultUsageRepository) {
+export async function admitAiOperation(ownerId: string, operationKey: string, operationType: AiOperationType, now = new Date(), repository: UsageRepositoryBoundary = defaultUsageRepository, activeOperationKeyPrefix?: string) {
   if (!Types.ObjectId.isValid(ownerId)) throw new AppError(401, "AUTHENTICATION_REQUIRED", "Authentication is required");
   const { start } = quotaWindow(now);
   try {
-    const result = await repository.reserveUsage(ownerId, start, operationKey, operationType, env.AI_DAILY_OPERATION_LIMIT, env.AI_APPLICATION_DAILY_OPERATION_LIMIT, now);
+    const result = await repository.reserveUsage(ownerId, start, operationKey, operationType, env.AI_DAILY_OPERATION_LIMIT, env.AI_APPLICATION_DAILY_OPERATION_LIMIT, now, 300_000, activeOperationKeyPrefix);
     if (!result) throw new AppError(429, "AI_QUOTA_EXCEEDED", "AI usage limit reached; try again after the quota resets");
-    return { id: result.reservation._id.toString(), duplicate: result.duplicate, windowStart: start };
+    return {
+      id: result.reservation._id.toString(),
+      duplicate: result.duplicate,
+      status: result.reservation.status,
+      windowStart: start,
+    };
   } catch (error) {
     if (error instanceof AppError) throw error;
     if (env.AI_USAGE_FAIL_CLOSED) throw new AppError(503, "AI_QUOTA_UNAVAILABLE", "AI usage controls are temporarily unavailable");
@@ -77,12 +82,22 @@ export const completeAiOperation = (id: string, usage?: Parameters<typeof transi
   "completed",
   usage ? { ...usage, pricingBasis: usage.model && env.AI_MODEL_PRICING_JSON ? pricingForModel(usage.model) : null } : undefined,
 );
-export const releaseAiOperation = (id: string, repository: UsageRepositoryBoundary = defaultUsageRepository) => repository.transitionUsage(id, "reserved", "released");
+export async function releaseAiOperation(
+  id: string,
+  repository: UsageRepositoryBoundary = defaultUsageRepository,
+) {
+  const releasedBeforeDispatch = await repository.transitionUsage(id, "reserved", "released");
+  if (releasedBeforeDispatch) return releasedBeforeDispatch;
+  return repository.transitionUsage(id, "dispatched", "released");
+}
 export const markAiUncertain = (id: string, repository: UsageRepositoryBoundary = defaultUsageRepository) => repository.transitionUsage(id, "dispatched", "uncertain");
 export async function getUsageForUser(ownerId: string, now = new Date(), repository: UsageRepositoryBoundary = defaultUsageRepository) {
   const { start, resetAt } = quotaWindow(now);
   const [window, reservations] = await repository.usageSummary(ownerId, start);
-  const used = reservations.filter((item) => ["completed", "dispatched", "uncertain"].includes(item.status)).length;
+  const used = reservations.filter((item) =>
+    ["completed", "dispatched", "uncertain", "reconciled"].includes(item.status) ||
+    (item.status === "released" && item.dispatchStartedAt != null)
+  ).length;
   const reserved = reservations.filter((item) => item.status === "reserved").length;
   const pricing = parsePricing();
   const known = reservations.filter((item) => item.inputTokens != null || item.outputTokens != null || item.embeddingTokens != null);

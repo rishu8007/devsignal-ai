@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { Request, Response } from "express";
 import { AppError } from "../errors/app-error.js";
 import {
@@ -22,7 +23,21 @@ export async function createGeneration(request: Request, response: Response): Pr
   }
 
   const body = request.body as GenerationRequestInput;
-  const result = await createGenerationForSignal(ownerId, signalId, body.useKnowledge);
+  const requestedCorrelationId = request.get("X-Correlation-ID")?.trim();
+  const correlationId =
+    requestedCorrelationId && /^[A-Za-z0-9._:-]{1,100}$/.test(requestedCorrelationId)
+      ? requestedCorrelationId
+      : randomUUID();
+  const result = await createGenerationForSignal(
+    ownerId,
+    signalId,
+    body.useKnowledge,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    correlationId,
+  );
   response.status(result.created ? 201 : 200).json({
     success: true,
     data: { generation: result.generation },

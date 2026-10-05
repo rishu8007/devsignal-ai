@@ -7,19 +7,24 @@ from typing import Any, cast
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from google import genai
+from google.genai import types
 from langgraph.checkpoint.mongodb import MongoDBSaver
-from openai import AsyncOpenAI
 from pymongo import MongoClient
 from qdrant_client import AsyncQdrantClient
 
 from app.api.router import router
 from app.config import get_settings
 from app.errors import ApplicationError
-from app.providers.draft_review_provider import DraftReviewProvider, ReviewResponses
-from app.providers.embedding_provider import EmbeddingsAPI, OpenAIEmbeddingProvider
-from app.providers.openai_provider import OpenAIProvider, ResponsesAPI
-from app.providers.research_brief_provider import ResearchBriefProvider, ResearchResponses
-from app.providers.topic_planning_provider import TopicPlanningProvider, TopicResponses
+from app.providers.gemini_embedding_provider import GeminiEmbeddingClient, GeminiEmbeddingProvider
+from app.providers.gemini_provider import (
+    GeminiAsyncClient,
+    GeminiDraftReviewProvider,
+    GeminiGenerationProvider,
+    GeminiResearchBriefProvider,
+    GeminiStructuredClient,
+    GeminiTopicPlanningProvider,
+)
 from app.repositories.qdrant_repository import QdrantAPI, QdrantVectorRepository
 from app.services.retrieval import RetrievalService
 from app.services.source_indexing import EmbeddingConfiguration, SourceIndexingService
@@ -44,113 +49,103 @@ if not logger.handlers:
 async def lifespan(application: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
     application.state.started_at = monotonic()
-    client = AsyncOpenAI(
-        api_key=settings.openai_api_key.get_secret_value(),
-        timeout=settings.openai_timeout_seconds,
-        max_retries=2,
-    )
-    research_client = AsyncOpenAI(
-        api_key=settings.openai_api_key.get_secret_value(),
-        timeout=settings.openai_timeout_seconds,
-        max_retries=0,
-    )
-    application.state.provider = OpenAIProvider(
-        cast(ResponsesAPI, client.responses),
-        client.close,
-        settings.openai_model,
-    )
-    application.state.topic_planning_provider = TopicPlanningProvider(
-        cast(TopicResponses, client.responses), client.close, settings.openai_model
-    )
-    application.state.research_brief_provider = ResearchBriefProvider(
-        cast(ResearchResponses, research_client.responses),
-        research_client.close,
-        settings.openai_model,
-    )
-    application.state.draft_review_provider = DraftReviewProvider(
-        cast(ReviewResponses, research_client.responses),
-        research_client.close,
-        settings.openai_model,
-    )
+    raw_gemini_client: genai.Client | None = None
+    gemini_client: GeminiAsyncClient | None = None
+    structured_client: GeminiStructuredClient | None = None
     workflow_checkpoint_client: MongoClient[dict[str, Any]] | None = None
     workflow_checkpointer: MongoDBSaver | None = None
-    if settings.workflow_checkpoint_uri:
-        workflow_checkpoint_client = MongoClient(settings.workflow_checkpoint_uri)
-        workflow_checkpointer = MongoDBSaver(
-            workflow_checkpoint_client,
-            db_name=settings.workflow_checkpoint_database,
-        )
-        application.state.workflow_graph = build_workflow_graph(
-            application.state.research_brief_provider,
-            OpenAIProvider(
-                cast(ResponsesAPI, research_client.responses),
-                research_client.close,
-                settings.openai_model,
-            ),
-            application.state.draft_review_provider,
-            workflow_checkpointer,
-        )
-    else:
-        application.state.workflow_graph = None
-    application.state.embedding_provider = OpenAIEmbeddingProvider(
-        cast(EmbeddingsAPI, client.embeddings),
-        settings.openai_embedding_model,
-        settings.openai_embedding_dimensions,
-    )
-    application.state.research_embedding_provider = OpenAIEmbeddingProvider(
-        cast(EmbeddingsAPI, research_client.embeddings),
-        settings.openai_embedding_model,
-        settings.openai_embedding_dimensions,
-    )
-    qdrant_client = AsyncQdrantClient(
-        url=str(settings.qdrant_url),
-        timeout=settings.qdrant_timeout_seconds,
-    )
-    application.state.qdrant_repository = QdrantVectorRepository(
-        cast(QdrantAPI, qdrant_client),
-        settings.qdrant_collection_name,
-        settings.openai_embedding_dimensions,
-        settings.qdrant_timeout_seconds,
-    )
-    application.state.indexing_service = SourceIndexingService(
-        application.state.embedding_provider,
-        application.state.qdrant_repository,
-        EmbeddingConfiguration(
-            model=settings.openai_embedding_model,
-            dimensions=settings.openai_embedding_dimensions,
-        ),
-    )
-    application.state.retrieval_service = RetrievalService(
-        application.state.embedding_provider,
-        application.state.qdrant_repository,
-        EmbeddingConfiguration(
-            model=settings.openai_embedding_model,
-            dimensions=settings.openai_embedding_dimensions,
-        ),
-    )
-    application.state.research_retrieval_service = RetrievalService(
-        application.state.research_embedding_provider,
-        application.state.qdrant_repository,
-        EmbeddingConfiguration(
-            model=settings.openai_embedding_model,
-            dimensions=settings.openai_embedding_dimensions,
-        ),
-    )
-    logger.info("DevSignal AI service started")
+    qdrant_client: AsyncQdrantClient | None = None
     try:
+        raw_gemini_client = genai.Client(
+            api_key=settings.gemini_api_key.get_secret_value(),
+            http_options=types.HttpOptions(
+                timeout=int(settings.gemini_timeout_seconds * 1000),
+            ),
+        )
+        gemini_client = cast(GeminiAsyncClient, raw_gemini_client.aio)
+        structured_client = GeminiStructuredClient(
+            gemini_client,
+            settings.gemini_model,
+            timeout_seconds=settings.gemini_timeout_seconds,
+            retry_attempts=2,
+        )
+        application.state.provider = GeminiGenerationProvider(structured_client)
+        application.state.topic_planning_provider = GeminiTopicPlanningProvider(structured_client)
+        application.state.research_brief_provider = GeminiResearchBriefProvider(structured_client)
+        application.state.draft_review_provider = GeminiDraftReviewProvider(structured_client)
+
+        if settings.workflow_checkpoint_uri:
+            workflow_checkpoint_client = MongoClient(settings.workflow_checkpoint_uri)
+            workflow_checkpointer = MongoDBSaver(
+                workflow_checkpoint_client,
+                db_name=settings.workflow_checkpoint_database,
+            )
+            application.state.workflow_graph = build_workflow_graph(
+                application.state.research_brief_provider,
+                application.state.provider,
+                application.state.draft_review_provider,
+                workflow_checkpointer,
+            )
+        else:
+            application.state.workflow_graph = None
+
+        application.state.embedding_provider = GeminiEmbeddingProvider(
+            cast(GeminiEmbeddingClient, gemini_client),
+            settings.gemini_embedding_model,
+            settings.gemini_embedding_dimensions,
+            timeout_seconds=settings.gemini_timeout_seconds,
+        )
+        application.state.research_embedding_provider = application.state.embedding_provider
+        qdrant_client = AsyncQdrantClient(
+            url=str(settings.qdrant_url),
+            timeout=settings.qdrant_timeout_seconds,
+        )
+        application.state.qdrant_repository = QdrantVectorRepository(
+            cast(QdrantAPI, qdrant_client),
+            settings.qdrant_collection_name,
+            settings.gemini_embedding_dimensions,
+            settings.qdrant_timeout_seconds,
+        )
+        embedding_configuration = EmbeddingConfiguration(
+            model=settings.gemini_embedding_model,
+            dimensions=settings.gemini_embedding_dimensions,
+        )
+        application.state.indexing_service = SourceIndexingService(
+            application.state.embedding_provider,
+            application.state.qdrant_repository,
+            embedding_configuration,
+        )
+        application.state.retrieval_service = RetrievalService(
+            application.state.embedding_provider,
+            application.state.qdrant_repository,
+            embedding_configuration,
+        )
+        application.state.research_retrieval_service = RetrievalService(
+            application.state.research_embedding_provider,
+            application.state.qdrant_repository,
+            embedding_configuration,
+        )
+        logger.info("DevSignal AI service started")
         yield
     finally:
         try:
-            await application.state.provider.close()
+            if structured_client is not None:
+                await structured_client.close()
+            elif gemini_client is not None:
+                await gemini_client.aclose()
+            elif raw_gemini_client is not None:
+                await raw_gemini_client.aio.aclose()
         finally:
             try:
-                await research_client.close()
-            finally:
                 if workflow_checkpointer is not None:
                     workflow_checkpointer.close()
-                if workflow_checkpoint_client is not None:
-                    workflow_checkpoint_client.close()
-                await qdrant_client.close()
+            finally:
+                try:
+                    if workflow_checkpoint_client is not None:
+                        workflow_checkpoint_client.close()
+                finally:
+                    if qdrant_client is not None:
+                        await qdrant_client.close()
         logger.info("DevSignal AI service stopped")
 
 

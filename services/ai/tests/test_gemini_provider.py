@@ -192,7 +192,8 @@ def test_generation_uses_structured_output_and_validates_three_angles_and_citati
     assert isinstance(config, types.GenerateContentConfig)
     assert config.system_instruction == SYSTEM_PROMPT
     assert config.response_mime_type == "application/json"
-    assert config.response_schema is ProviderGenerationOutput
+    assert config.response_json_schema is not None
+    assert "$ref" not in str(config.response_json_schema)
     assert call["contents"] == build_user_prompt(generation_request())
 
 
@@ -231,7 +232,8 @@ def test_topic_planning_uses_its_existing_pydantic_schema_and_system_instruction
     call = models.calls[0]
     config = call["config"]
     assert isinstance(config, types.GenerateContentConfig)
-    assert config.response_schema is TopicPlanData
+    assert config.response_json_schema is not None
+    assert "$ref" not in str(config.response_json_schema)
     assert config.system_instruction == TOPIC_PLANNING_SYSTEM_PROMPT
     assert call["contents"] == request.model_dump_json(by_alias=True)
 
@@ -250,7 +252,8 @@ def test_research_brief_uses_its_existing_pydantic_schema_and_system_instruction
     assert usage is None
     config = models.calls[0]["config"]
     assert isinstance(config, types.GenerateContentConfig)
-    assert config.response_schema is ResearchBriefData
+    assert config.response_json_schema is not None
+    assert "$ref" not in str(config.response_json_schema)
     assert config.system_instruction == RESEARCH_BRIEF_SYSTEM_PROMPT
 
 
@@ -264,7 +267,8 @@ def test_draft_review_uses_its_existing_pydantic_schema_and_system_instruction()
     assert usage is None
     config = models.calls[0]["config"]
     assert isinstance(config, types.GenerateContentConfig)
-    assert config.response_schema is DraftReviewData
+    assert config.response_json_schema is not None
+    assert "$ref" not in str(config.response_json_schema)
     assert config.system_instruction == DRAFT_REVIEW_SYSTEM_PROMPT
 
 
@@ -314,6 +318,25 @@ def test_malformed_blocked_empty_and_truncated_outputs_are_classified(
     assert raised.value.kind == kind
 
 
+def test_pydantic_response_validation_logs_only_safe_path_and_type() -> None:
+    client, _, _ = structured_client(FakeResponse(parsed={"unexpected": True}))
+
+    with pytest.raises(ProviderError) as raised:
+        asyncio.run(
+            client.generate(
+                system_instruction="instructions",
+                contents="fictional content",
+                response_schema=ProviderGenerationOutput,
+            )
+        )
+
+    assert raised.value.stage == "response_validation"
+    assert raised.value.exception_class == "ValidationError"
+    assert raised.value.reason is not None
+    assert "variations" in raised.value.reason
+    assert "fictional content" not in raised.value.reason
+
+
 @pytest.mark.parametrize(
     ("status", "kind"),
     [
@@ -342,6 +365,19 @@ def test_gemini_api_errors_map_without_exposing_provider_message(status: int, ki
 
     assert raised.value.kind == kind
     assert str(raised.value) == kind
+    assert raised.value.exception_class == "APIError"
+    assert raised.value.stage == "generate_content"
+    assert raised.value.upstream_status == status
+    assert raised.value.reason in {
+        "invalid_request",
+        "authentication",
+        "permission",
+        "not_found",
+        "request_timeout",
+        "rate_limited",
+        "upstream_server_error",
+        "gateway_timeout",
+    }
 
 
 @pytest.mark.parametrize(

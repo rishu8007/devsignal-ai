@@ -34,12 +34,16 @@ test("duplicate logical admission returns the existing reservation", async () =>
   const repository = fakeRepository({
     reserve: async () => {
       calls += 1;
-      return { duplicate: true, reservation: { _id: { toString: () => "existing" } } } as never;
+      return {
+        duplicate: true,
+        reservation: { _id: { toString: () => "existing" }, status: "uncertain" },
+      } as never;
     },
   });
   const result = await admitAiOperation(owner, "generation:one", "generation", new Date("2026-09-22T00:00:00Z"), repository);
   assert.equal(result.duplicate, true);
   assert.equal(result.id, "existing");
+  assert.equal(result.status, "uncertain");
   assert.equal(calls, 1);
 });
 
@@ -97,6 +101,18 @@ test("known pre-dispatch failures release while uncertain work is retained", asy
   assert.deepEqual(transitions, ["reserved->released", "dispatched->uncertain"]);
 });
 
+test("definitive provider failures release dispatched reservations", async () => {
+  const transitions: string[] = [];
+  const repository = fakeRepository({
+    transition: async (_id, from, to) => {
+      transitions.push(`${from}->${to}`);
+      return from === "dispatched" && to === "released" ? ({ status: "released" } as never) : null;
+    },
+  });
+  await releaseAiOperation("known-provider-failure", repository);
+  assert.deepEqual(transitions, ["reserved->released", "dispatched->released"]);
+});
+
 test("provider usage aggregates multiple calls without inventing missing counters", () => {
   assert.deepEqual(aggregateProviderUsage([
     { model: "a", inputTokens: 10, outputTokens: 5, embeddingTokens: null },
@@ -122,6 +138,18 @@ test("usage summaries keep reserved and uncertain work distinct", async () => {
   assert.equal(result.used, 2);
   assert.equal(result.reserved, 1);
   assert.equal(result.knownUsageRecords, 1);
+});
+
+test("consumed released work remains counted while never-dispatched release does not", async () => {
+  const result = await getUsageForUser(owner, new Date("2026-09-22T12:00:00Z"), fakeRepository({
+    summary: async () => [null, [
+      { operationType: "generation", status: "released", dispatchStartedAt: new Date() },
+      { operationType: "generation", status: "released", dispatchStartedAt: null },
+      { operationType: "generation", status: "generation", dispatchStartedAt: null },
+    ]] as never,
+  }));
+  assert.equal(result.used, 1);
+  assert.equal(result.reserved, 0);
 });
 
 test("different owners contend atomically for the final application slot", async () => {

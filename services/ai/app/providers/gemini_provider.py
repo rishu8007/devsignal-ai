@@ -11,6 +11,11 @@ from pydantic import BaseModel, ValidationError
 
 from app.prompts import SYSTEM_PROMPT, build_user_prompt
 from app.providers.errors import ProviderError
+from app.providers.gemini_errors import (
+    gemini_api_error_kind,
+    gemini_api_error_reason,
+    is_http_timeout_exception,
+)
 from app.providers.text_prompts import (
     DRAFT_REVIEW_SYSTEM_PROMPT,
     RESEARCH_BRIEF_SYSTEM_PROMPT,
@@ -89,19 +94,22 @@ class GeminiStructuredClient:
         contents: str,
         response_schema: type[OutputT],
     ) -> tuple[OutputT, str, UsageMetadata | None]:
-        config = types.GenerateContentConfig(
-            system_instruction=system_instruction,
-            response_mime_type="application/json",
-            response_schema=response_schema,
-            http_options=types.HttpOptions(
-                timeout=int(self._timeout_seconds * 1000),
-                retry_options=types.HttpRetryOptions(
-                    attempts=self._retry_attempts,
-                    http_status_codes=_RETRYABLE_HTTP_STATUS_CODES,
-                ),
-            ),
-        )
+        stage = "request_config"
         try:
+            provider_schema = _gemini_response_schema(response_schema)
+            config = types.GenerateContentConfig(
+                system_instruction=system_instruction,
+                response_mime_type="application/json",
+                response_json_schema=provider_schema,
+                http_options=types.HttpOptions(
+                    timeout=int(self._timeout_seconds * 1000),
+                    retry_options=types.HttpRetryOptions(
+                        attempts=self._retry_attempts,
+                        http_status_codes=_RETRYABLE_HTTP_STATUS_CODES,
+                    ),
+                ),
+            )
+            stage = "generate_content"
             response = await self._client.models.generate_content(
                 model=self._model,
                 contents=contents,
@@ -110,14 +118,32 @@ class GeminiStructuredClient:
         except asyncio.CancelledError:
             raise
         except (httpx.TimeoutException, TimeoutError) as exception:
-            raise ProviderError("timeout") from exception
+            raise ProviderError(
+                "timeout",
+                exception_class=type(exception).__name__,
+                stage=stage,
+            ) from exception
         except APIError as exception:
-            raise _map_api_error(exception) from exception
+            raise ProviderError(
+                gemini_api_error_kind(exception),
+                exception_class=type(exception).__name__,
+                stage=stage,
+                upstream_status=exception.code,
+                reason=gemini_api_error_reason(exception),
+            ) from exception
         except httpx.TransportError as exception:
-            raise ProviderError("provider") from exception
+            raise ProviderError(
+                "provider",
+                exception_class=type(exception).__name__,
+                stage=stage,
+            ) from exception
         except Exception as exception:
-            kind = "timeout" if _is_http_timeout_exception(exception) else "provider"
-            raise ProviderError(kind) from exception
+            kind = "timeout" if is_http_timeout_exception(exception) else "provider"
+            raise ProviderError(
+                kind,
+                exception_class=type(exception).__name__,
+                stage=stage,
+            ) from exception
 
         output = _parse_response(response, response_schema)
         actual_model = getattr(response, "model_version", None)
@@ -129,6 +155,38 @@ class GeminiStructuredClient:
             if not self._closed:
                 await self._client.aclose()
                 self._closed = True
+
+
+def _gemini_response_schema(response_schema: type[OutputT]) -> dict[str, object]:
+    raw_schema = response_schema.model_json_schema()
+    definitions = raw_schema.get("$defs", {})
+    if not isinstance(definitions, dict):
+        raise TypeError("Pydantic schema definitions must be an object")
+
+    def expand(value: object) -> object:
+        if isinstance(value, list):
+            return [expand(item) for item in value]
+        if not isinstance(value, dict):
+            return value
+        reference = value.get("$ref")
+        if isinstance(reference, str):
+            prefix = "#/$defs/"
+            if not reference.startswith(prefix):
+                raise ValueError("unsupported schema reference")
+            definition = definitions.get(reference[len(prefix) :])
+            if not isinstance(definition, dict):
+                raise ValueError("missing schema definition")
+            return expand(definition)
+        return {
+            key: expand(item)
+            for key, item in value.items()
+            if key not in {"$defs", "$ref", "title", "default"}
+        }
+
+    expanded = expand(raw_schema)
+    if not isinstance(expanded, dict):
+        raise TypeError("Pydantic schema must be an object")
+    return expanded
 
 
 class GeminiGenerationProvider:
@@ -223,16 +281,16 @@ def _parse_response(response: object, response_schema: type[OutputT]) -> OutputT
 
     candidates = getattr(response, "candidates", None)
     if not isinstance(candidates, Sequence) or isinstance(candidates, (str, bytes)):
-        raise ProviderError("invalid_response")
+        raise ProviderError("invalid_response", stage="response_shape", reason="missing_candidates")
     for candidate in candidates:
         finish_reason = _enum_name(getattr(candidate, "finish_reason", None))
         if finish_reason in _REFUSAL_FINISH_REASONS:
             raise ProviderError("refused")
         if finish_reason == "MAX_TOKENS":
-            raise ProviderError("invalid_response")
+            raise ProviderError("invalid_response", stage="response_shape", reason="max_tokens")
 
     if not candidates:
-        raise ProviderError("invalid_response")
+        raise ProviderError("invalid_response", stage="response_shape", reason="empty_candidates")
 
     parsed = getattr(response, "parsed", None)
     try:
@@ -242,12 +300,24 @@ def _parse_response(response: object, response_schema: type[OutputT]) -> OutputT
             return response_schema.model_validate(parsed)
         text = getattr(response, "text", None)
         if not isinstance(text, str) or not text.strip():
-            raise ProviderError("invalid_response")
+            raise ProviderError("invalid_response", stage="response_shape", reason="missing_text")
         return response_schema.model_validate_json(text)
     except ProviderError:
         raise
     except (ValidationError, TypeError, ValueError) as exception:
-        raise ProviderError("invalid_response") from exception
+        reason = "response_validation_failed"
+        if isinstance(exception, ValidationError):
+            first_error = exception.errors(include_url=False)[0]
+            location = ".".join(str(item) for item in first_error.get("loc", ()))
+            error_type = first_error.get("type")
+            if isinstance(error_type, str):
+                reason = f"{error_type}@{location or 'root'}"
+        raise ProviderError(
+            "invalid_response",
+            exception_class=type(exception).__name__,
+            stage="response_validation",
+            reason=reason,
+        ) from exception
 
 
 def _enum_name(value: object) -> str:
@@ -255,25 +325,6 @@ def _enum_name(value: object) -> str:
     if not isinstance(value, str):
         return ""
     return value.rsplit(".", 1)[-1].upper()
-
-
-def _map_api_error(exception: APIError) -> ProviderError:
-    status = exception.code
-    if status in (408, 504):
-        return ProviderError("timeout")
-    if status == 429:
-        return ProviderError("rate_limit")
-    if status in (401, 403, 404):
-        return ProviderError("unavailable")
-    return ProviderError("provider")
-
-
-def _is_http_timeout_exception(exception: Exception) -> bool:
-    return any(
-        base.__name__ == "TimeoutException"
-        and base.__module__.split(".", 1)[0] in {"httpx", "httpx2"}
-        for base in type(exception).__mro__
-    )
 
 
 def _usage_metadata(usage: object | None, model: str) -> UsageMetadata | None:

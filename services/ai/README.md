@@ -1,8 +1,12 @@
 # DevSignal AI service
 
-The FastAPI service owns prompt construction, the OpenAI provider boundary,
+The FastAPI service owns prompt construction, the Gemini provider boundary,
 structured output validation, and safe AI error handling. It listens on port
 `8000` by default.
+
+Gemini is the active provider for generation, topic planning, research briefs,
+draft review, optional workflows, indexing, and retrieval. OpenAI adapters and
+the dependency remain temporarily for compatibility tests only.
 
 For fresh-clone setup, environment variables, matching internal keys, service
 URLs, and the complete verification checklist, see the
@@ -28,20 +32,22 @@ Set-Location services\ai
 & .venv\Scripts\python.exe -m pytest
 ```
 
-The service requires `OPENAI_API_KEY`, `OPENAI_MODEL`, and an
+The service requires `GEMINI_API_KEY`, `GEMINI_MODEL`, and an
 `INTERNAL_API_KEY` of at least 32 characters. The API's
 `AI_INTERNAL_API_KEY` must be identical to this internal key. The tracked
-example defaults to model `gpt-5.6-luna`. Tests use a fake provider and do
-not call OpenAI; live generation requires an OpenAI key and may incur usage
-costs. Generated claims still require human review.
+example defaults to model `gemini-3.8-flash`. Tests use fake providers and do
+not call Gemini; live generation and embedding require a Gemini key and may
+incur usage costs. Generated claims still require human review.
 
 Qdrant is configured independently with `QDRANT_URL`,
 `QDRANT_COLLECTION_NAME`, and `QDRANT_TIMEOUT_SECONDS`. The configured
 collection uses cosine distance and the embedding dimensions from
-`OPENAI_EMBEDDING_DIMENSIONS`. The lifespan only constructs and closes the
-client; collection creation is explicit and never runs automatically at
-startup. Qdrant failures therefore do not prevent health checks or existing
-generation behavior from starting.
+`GEMINI_EMBEDDING_DIMENSIONS`. The Gemini collection is
+`devsignal_knowledge_chunks_gemini_v1`; the legacy OpenAI collection is
+rejected by startup configuration validation. The lifespan only constructs and
+closes the client; collection creation is explicit and never runs
+automatically at startup. Qdrant failures therefore do not prevent health
+checks or generation behavior from starting.
 
 ## Text chunking
 
@@ -67,19 +73,28 @@ client and preserves the original input order using response `index` values.
 It validates completeness, uniqueness, range, dimensions, finite numeric
 values, and input bounds without truncating text.
 
-The default embedding configuration is:
+`app/providers/gemini_embedding_provider.py` prepares an adapter for
+`gemini-embedding-2` with 1536 output dimensions. The shared embedding protocol
+marks each request as either a document or query; OpenAI ignores this purpose
+to preserve its existing payload. Gemini uses the documented retrieval formats
+(`title: none | text: ...` for documents and `task: search result | query: ...`
+for queries) without changing stored source text or citation content. Each text
+is sent as a separate `Content` so the model does not aggregate several chunks
+into one vector. The adapter borrows its injected client; application lifespan
+owns and closes that client exactly once.
 
-- `OPENAI_EMBEDDING_MODEL=text-embedding-3-small`
-- `OPENAI_EMBEDDING_DIMENSIONS=1536`
+The default Gemini embedding configuration is:
+
+- `GEMINI_EMBEDDING_MODEL=gemini-embedding-2`
+- `GEMINI_EMBEDDING_DIMENSIONS=1536`
 - maximum batch size: 64 texts;
 - maximum text size: 1,000 Unicode code points per text;
 - maximum batch size: 32,000 Unicode code points.
 
 The model and dimensions are configured independently from the generation
-`OPENAI_MODEL`. These limits are character-based safety bounds; the provider
+`GEMINI_MODEL`. These limits are character-based safety bounds; the provider
 does not silently truncate input. Provider failures are converted to safe
-internal error kinds, and the existing SDK retry policy remains the only retry
-layer.
+internal error kinds, and embedding SDK retries remain disabled.
 
 ## Qdrant vector storage foundation
 

@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 import pytest
 
 from app.providers.errors import EmbeddingProviderError
+from app.providers.protocol import EmbeddingPurpose
 from app.repositories.qdrant_repository import ChunkSearchResult, QdrantRepositoryError
 from app.services.retrieval import (
     RetrievalError,
@@ -23,9 +24,16 @@ class FakeEmbeddingProvider:
     vectors: list[list[float]] = field(default_factory=lambda: [[0.1, 0.2, 0.3]])
     error: Exception | None = None
     calls: list[list[str]] = field(default_factory=list)
+    purposes: list[EmbeddingPurpose] = field(default_factory=list)
 
-    async def embed(self, texts: list[str]) -> list[list[float]]:
+    async def embed(
+        self,
+        texts: list[str],
+        *,
+        purpose: EmbeddingPurpose = "document",
+    ) -> list[list[float]]:
         self.calls.append(texts)
+        self.purposes.append(purpose)
         if self.error is not None:
             raise self.error
         return self.vectors
@@ -98,6 +106,7 @@ async def test_propagates_owner_filter_and_preserves_result_order() -> None:
     assert [candidate.chunk_index for candidate in candidates] == [1, 0]
     assert searcher.calls == [(OWNER_ID, [0.1, 0.2, 0.3], 2)]
     assert provider.calls == [["find this"]]
+    assert provider.purposes == ["query"]
     assert not hasattr(candidates[0], "vector")
 
 

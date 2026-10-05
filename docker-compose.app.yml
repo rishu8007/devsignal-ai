@@ -9,15 +9,15 @@ services:
       APP_ENV: production
       HOST: 0.0.0.0
       PORT: 8000
-      OPENAI_API_KEY: ${OPENAI_API_KEY:?OPENAI_API_KEY is required for the AI service}
-      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-5.6-luna}
-      OPENAI_EMBEDDING_MODEL: ${OPENAI_EMBEDDING_MODEL:-text-embedding-3-small}
-      OPENAI_EMBEDDING_DIMENSIONS: ${OPENAI_EMBEDDING_DIMENSIONS:-1536}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:?GEMINI_API_KEY is required for the AI service}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.8-flash}
+      GEMINI_EMBEDDING_MODEL: ${GEMINI_EMBEDDING_MODEL:-gemini-embedding-2}
+      GEMINI_EMBEDDING_DIMENSIONS: ${GEMINI_EMBEDDING_DIMENSIONS:-1536}
       QDRANT_URL: http://qdrant:6333
-      QDRANT_COLLECTION_NAME: ${QDRANT_COLLECTION_NAME:-devsignal_knowledge_chunks}
+      QDRANT_COLLECTION_NAME: ${QDRANT_COLLECTION_NAME:-devsignal_knowledge_chunks_gemini_v1}
       QDRANT_TIMEOUT_SECONDS: ${QDRANT_TIMEOUT_SECONDS:-10}
       INTERNAL_API_KEY: ${AI_INTERNAL_API_KEY:?AI_INTERNAL_API_KEY is required}
-      OPENAI_TIMEOUT_SECONDS: ${OPENAI_TIMEOUT_SECONDS:-45}
+      GEMINI_TIMEOUT_SECONDS: ${GEMINI_TIMEOUT_SECONDS:-45}
       WORKFLOW_CHECKPOINT_URI: ${WORKFLOW_CHECKPOINT_URI:-}
       WORKFLOW_CHECKPOINT_DATABASE: ${WORKFLOW_CHECKPOINT_DATABASE:-devsignal_workflow_checkpoints}
     ports:
@@ -46,12 +46,15 @@ services:
       AUTH_COOKIE_NAME: ${AUTH_COOKIE_NAME:-devsignal_access_token}
       AI_SERVICE_URL: http://ai:8000
       AI_INTERNAL_API_KEY: ${AI_INTERNAL_API_KEY:?AI_INTERNAL_API_KEY is required}
+      AI_RECONCILIATION_ADMIN_KEY: ${AI_RECONCILIATION_ADMIN_KEY:-}
+      GENERATION_RATE_LIMIT_ENABLED: ${GENERATION_RATE_LIMIT_ENABLED:-true}
       AI_SERVICE_TIMEOUT_MS: ${AI_SERVICE_TIMEOUT_MS:-150000}
       LINKEDIN_ENABLED: ${LINKEDIN_ENABLED:-false}
       LINKEDIN_CLIENT_ID: ${LINKEDIN_CLIENT_ID:-}
       LINKEDIN_CLIENT_SECRET: ${LINKEDIN_CLIENT_SECRET:-}
       LINKEDIN_REDIRECT_URI: ${LINKEDIN_REDIRECT_URI:-}
       LINKEDIN_TOKEN_ENCRYPTION_KEY: ${LINKEDIN_TOKEN_ENCRYPTION_KEY:-}
+      LINKEDIN_OAUTH_DIAGNOSTICS_ENABLED: ${LINKEDIN_OAUTH_DIAGNOSTICS_ENABLED:-false}
       LINKEDIN_SCOPES: ${LINKEDIN_SCOPES:-openid profile email}
       LINKEDIN_POSTING_SCOPES: ${LINKEDIN_POSTING_SCOPES:-openid profile email w_member_social}
       LINKEDIN_API_VERSION: ${LINKEDIN_API_VERSION:-202601}
@@ -84,10 +87,10 @@ services:
     extends:
       service: api
     command: ["node", "services/api/dist/github-sync-worker.js"]
-    ports: []
+    ports: !reset []
     healthcheck:
       disable: true
-    restart: unless-stopped
+    restart: on-failure
 
   web:
     profiles: ["app"]

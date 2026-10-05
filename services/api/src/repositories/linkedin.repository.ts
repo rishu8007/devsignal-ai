@@ -26,6 +26,10 @@ export function findLinkedInConnection(ownerId: string) {
   return LinkedInConnectionModel.findOne({ ownerId }).lean<LinkedInConnectionDocument>().exec();
 }
 
+export function findLinkedInConnectionByProviderMemberId(providerMemberId: string) {
+  return LinkedInConnectionModel.findOne({ providerMemberId }).lean<LinkedInConnectionDocument>().exec();
+}
+
 export function createLinkedInConnection(input: Record<string, unknown>) {
   return LinkedInConnectionModel.create(input);
 }

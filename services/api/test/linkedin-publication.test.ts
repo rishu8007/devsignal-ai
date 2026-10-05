@@ -8,8 +8,10 @@ import {
   confirmLinkedInPublication,
   createLinkedInPublicationPreview,
   dispatchClaimedLinkedInPublication,
+  listLinkedInPublicationHistory,
   rescheduleLinkedInPublication,
   scheduleLinkedInPublication,
+  startLinkedInSchedulerWorker,
   type LinkedInPublicationRepository,
 } from "../src/services/linkedin-publication.service.js";
 import type { LinkedInPublishingClient } from "../src/clients/linkedin-publishing.client.js";
@@ -173,6 +175,24 @@ test("cross-owner and unapproved drafts cannot create a preview", async () => {
   );
 });
 
+test("a draft changed to unapproved after preview cannot be published", async () => {
+  enablePublishing();
+  const { base, generation } = repository();
+  const preview = await createLinkedInPublicationPreview(ownerId, signalId, variationId.toString(), new Date(), base);
+  generation.variations[0].status = "draft";
+  let calls = 0;
+  await assert.rejects(
+    confirmLinkedInPublication(ownerId, preview.id, {
+      publishTextPost: async () => {
+        calls += 1;
+        return { kind: "published", providerPostId: "must-not-send" };
+      },
+    }, new Date(), base),
+    /approved draft/i,
+  );
+  assert.equal(calls, 0);
+});
+
 test("disconnect before confirmation blocks provider dispatch", async () => {
   enablePublishing();
   const { base, connection } = repository();
@@ -186,6 +206,48 @@ test("disconnect before confirmation blocks provider dispatch", async () => {
     },
   };
   await assert.rejects(confirmLinkedInPublication(ownerId, preview.id, provider, new Date(), base), /posting permission/i);
+  assert.equal(calls, 0);
+});
+
+test("missing posting capability blocks publication before provider dispatch", async () => {
+  enablePublishing();
+  const { base, connection } = repository();
+  connection.capabilities.posting = false;
+  let calls = 0;
+  await assert.rejects(
+    createLinkedInPublicationPreview(ownerId, signalId, variationId.toString(), new Date(), base),
+    /posting permission/i,
+  );
+  const validRepository = repository();
+  const preview = await createLinkedInPublicationPreview(ownerId, signalId, variationId.toString(), new Date(), validRepository.base);
+  validRepository.connection.capabilities.posting = false;
+  await assert.rejects(
+    confirmLinkedInPublication(ownerId, preview.id, {
+      publishTextPost: async () => {
+        calls += 1;
+        return { kind: "published", providerPostId: "must-not-send" };
+      },
+    }, new Date(), validRepository.base),
+    /posting permission/i,
+  );
+  assert.equal(calls, 0);
+});
+
+test("missing LinkedIn connection blocks publication before provider dispatch", async () => {
+  enablePublishing();
+  const { base } = repository();
+  const preview = await createLinkedInPublicationPreview(ownerId, signalId, variationId.toString(), new Date(), base);
+  base.findConnection = async () => null;
+  let calls = 0;
+  await assert.rejects(
+    confirmLinkedInPublication(ownerId, preview.id, {
+      publishTextPost: async () => {
+        calls += 1;
+        return { kind: "published", providerPostId: "must-not-send" };
+      },
+    }, new Date(), base),
+    /posting permission/i,
+  );
   assert.equal(calls, 0);
 });
 
@@ -215,6 +277,72 @@ test("published and uncertain operations are idempotent and never automatically 
   assert.equal((await confirmLinkedInPublication(ownerId, uncertainPreview.id, uncertainProvider, new Date(), uncertainRepo.base)).status, "uncertain");
   assert.equal((await confirmLinkedInPublication(ownerId, uncertainPreview.id, uncertainProvider, new Date(), uncertainRepo.base)).status, "uncertain");
   assert.equal(calls, 2);
+});
+
+test("explicit confirmation publishes only the approved preview text and persists provider success", async () => {
+  enablePublishing();
+  const { base, stored } = repository();
+  const preview = await createLinkedInPublicationPreview(ownerId, signalId, variationId.toString(), new Date(), base);
+  let sentText = "";
+  const published = await confirmLinkedInPublication(ownerId, preview.id, {
+    publishTextPost: async (_token, _member, exactText) => {
+      sentText = exactText;
+      return { kind: "published", providerPostId: "urn:li:share:approved" };
+    },
+  }, new Date(), base);
+
+  assert.equal(sentText, text);
+  assert.equal(published.status, "published");
+  assert.equal(published.providerPostId, "urn:li:share:approved");
+  assert.ok(published.dispatchedAt instanceof Date);
+  assert.ok(published.publishedAt instanceof Date);
+  const history = await listLinkedInPublicationHistory(ownerId, base);
+  assert.equal(history[0]?.status, "published");
+  assert.equal(history[0]?.providerPostId, "urn:li:share:approved");
+  assert.equal(history[0]?.text, text);
+  assert.equal(stored.get(preview.id)?.textSnapshot, text);
+});
+
+test("provider rejection persists only the safe failure status and code", async () => {
+  enablePublishing();
+  const { base, stored } = repository();
+  const preview = await createLinkedInPublicationPreview(ownerId, signalId, variationId.toString(), new Date(), base);
+  const failed = await confirmLinkedInPublication(ownerId, preview.id, {
+    publishTextPost: async () => ({
+      kind: "rejected",
+      errorCode: "LINKEDIN_POST_REJECTED",
+      errorMessage: "LinkedIn rejected this post.",
+    }),
+  }, new Date(), base);
+
+  assert.equal(failed.status, "rejected");
+  assert.equal(failed.errorCode, "LINKEDIN_POST_REJECTED");
+  assert.equal(failed.errorMessage, "LinkedIn rejected this post.");
+  assert.equal(failed.providerPostId, null);
+  assert.equal(stored.get(preview.id)?.status, "rejected");
+});
+
+test("preview creation and disabled scheduler do not publish automatically", async () => {
+  const mutable = env as typeof env & Record<string, unknown>;
+  mutable.LINKEDIN_SCHEDULER_ENABLED = false;
+  enablePublishing();
+  mutable.LINKEDIN_SCHEDULER_ENABLED = false;
+  const { base } = repository({
+    recoverExpiredDispatch: async () => null,
+    claimDuePublication: async () => null,
+  });
+  let calls = 0;
+  const preview = await createLinkedInPublicationPreview(ownerId, signalId, variationId.toString(), new Date(), base);
+  assert.equal(preview.status, "pending");
+  assert.equal(calls, 0);
+  const stop = startLinkedInSchedulerWorker(1, base, {
+    publishTextPost: async () => {
+      calls += 1;
+      return { kind: "published", providerPostId: "must-not-send" };
+    },
+  });
+  await stop();
+  assert.equal(calls, 0);
 });
 
 test("provider success followed by persistence failure remains non-retryable", async () => {

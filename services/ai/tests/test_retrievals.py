@@ -1,9 +1,17 @@
+import asyncio
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from fastapi.testclient import TestClient
 
+from app.api.routes.research_retrievals import create_research_retrieval
+from app.api.routes.retrievals import create_retrieval
 from app.main import app
-from app.services.retrieval import RetrievalCandidate, RetrievalError
+from app.providers.protocol import EmbeddingPurpose
+from app.repositories.qdrant_repository import ChunkSearchResult
+from app.schemas.retrieval import RetrievalRequest
+from app.services.retrieval import RetrievalCandidate, RetrievalError, RetrievalService
+from app.services.source_indexing import EmbeddingConfiguration
 
 INTERNAL_KEY = "test-internal-key-that-is-at-least-32-characters"
 PAYLOAD = {
@@ -98,3 +106,60 @@ def test_retrieval_distinguishes_missing_collection() -> None:
         client.__exit__(None, None, None)
     assert response.status_code == 503
     assert response.json()["error"]["code"] == "RETRIEVAL_COLLECTION_MISSING"
+
+
+def test_ordinary_and_research_routes_use_query_embeddings_and_owner_filters() -> None:
+    class QueryEmbeddings:
+        def __init__(self) -> None:
+            self.purposes: list[EmbeddingPurpose] = []
+
+        async def embed(
+            self,
+            texts: list[str],
+            *,
+            purpose: EmbeddingPurpose = "document",
+        ) -> list[list[float]]:
+            self.purposes.append(purpose)
+            return [[0.1, 0.2, 0.3]]
+
+        async def embed_with_usage(
+            self,
+            texts: list[str],
+            *,
+            purpose: EmbeddingPurpose = "document",
+        ) -> tuple[list[list[float]], None]:
+            return await self.embed(texts, purpose=purpose), None
+
+    class OwnerFilteringSearcher:
+        def __init__(self) -> None:
+            self.owner_ids: list[str] = []
+
+        async def search(
+            self,
+            owner_id: str,
+            query_vector: Sequence[float],
+            limit: int,
+            source_ids: Sequence[str] | None = None,
+        ) -> list[ChunkSearchResult]:
+            self.owner_ids.append(owner_id)
+            return []
+
+    embeddings = QueryEmbeddings()
+    searcher = OwnerFilteringSearcher()
+    service = RetrievalService(
+        embeddings,
+        searcher,
+        EmbeddingConfiguration(model="test-embedding", dimensions=3),
+    )
+    request = RetrievalRequest(**PAYLOAD)
+
+    async def run() -> None:
+        ordinary = await create_retrieval(request, service)
+        research = await create_research_retrieval(request, service)
+        assert ordinary.data == []
+        assert research.data == []
+
+    asyncio.run(run())
+
+    assert embeddings.purposes == ["query", "query"]
+    assert searcher.owner_ids == [PAYLOAD["ownerId"], PAYLOAD["ownerId"]]

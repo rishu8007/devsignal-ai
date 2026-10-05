@@ -4,16 +4,17 @@ import { GithubConnectionModel } from "../models/github-connection.model.js";
 import { GithubOauthStateModel } from "../models/github-oauth-state.model.js";
 
 export function ensureGithubIndexes() { return Promise.all([GithubConnectionModel.createIndexes(), GithubOauthStateModel.createIndexes(), GithubActivityModel.createIndexes()]).then(() => undefined); }
-export function findGithubConnection(ownerId: string) { return GithubConnectionModel.findOne({ ownerId }).lean().exec(); }
+const ownerObjectId = (ownerId: string) => new Types.ObjectId(ownerId);
+export function findGithubConnection(ownerId: string) { return GithubConnectionModel.findOne({ ownerId: ownerObjectId(ownerId) }).lean().exec(); }
 export function listGithubConnections() { return GithubConnectionModel.find({ status: "connected" }).lean().exec(); }
-export function createGithubConnection(input: Record<string, unknown>) { return GithubConnectionModel.create(input); }
-export function updateGithubConnection(ownerId: string, update: Record<string, unknown>) { return GithubConnectionModel.findOneAndUpdate({ ownerId }, { $set: update }, { new: true }).lean().exec(); }
+export function createGithubConnection(input: Record<string, unknown>) { return GithubConnectionModel.create({ ...input, ownerId: ownerObjectId(String(input.ownerId)) }); }
+export function updateGithubConnection(ownerId: string, update: Record<string, unknown>) { return GithubConnectionModel.findOneAndUpdate({ ownerId: ownerObjectId(ownerId) }, { $set: update }, { new: true }).lean().exec(); }
 export function claimGithubSync(ownerId: string, now: Date) { return GithubConnectionModel.findOneAndUpdate({ ownerId, status: "connected", "sync.status": { $ne: "syncing" }, $or: [{ "sync.nextEligibleAt": null }, { "sync.nextEligibleAt": { $lte: now } }] }, { $set: { "sync.status": "syncing", "sync.lastError": null, "sync.startedAt": now } }, { new: true }).lean().exec(); }
 export function disconnectGithubConnection(ownerId: string) { return GithubConnectionModel.findOneAndUpdate({ ownerId }, { $set: { status: "revoked", accessTokenEncrypted: "" }, $inc: { connectionGeneration: 1 } }).exec(); }
-export function createGithubOauthState(input: Record<string, unknown>) { return GithubOauthStateModel.create(input); }
+export function createGithubOauthState(input: Record<string, unknown>) { return GithubOauthStateModel.create({ ...input, ownerId: ownerObjectId(String(input.ownerId)) }); }
 export function consumeGithubOauthState(stateHash: string, sessionHash: string, now: Date) { return GithubOauthStateModel.findOneAndUpdate({ stateHash, sessionHash, usedAt: null, expiresAt: { $gt: now } }, { $set: { usedAt: now } }, { new: true }).lean().exec(); }
 export function findGithubOauthState(stateHash: string, sessionHash: string, now: Date) { return GithubOauthStateModel.findOne({ stateHash, sessionHash, usedAt: null, expiresAt: { $gt: now } }).lean().exec(); }
-export function setGithubOauthInstallation(stateHash: string, sessionHash: string, installationId: number) { return GithubOauthStateModel.updateOne({ stateHash, sessionHash, usedAt: null }, { $set: { pendingInstallationId: installationId } }).exec(); }
+export function setGithubOauthInstallation(stateHash: string, sessionHash: string, installationId: number, now = new Date()) { return GithubOauthStateModel.updateOne({ stateHash, sessionHash, usedAt: null, expiresAt: { $gt: now } }, { $set: { pendingInstallationId: installationId } }).exec(); }
 export function listGithubActivities(ownerId: string, kind?: "commit" | "pull_request" | "release", repositoryId?: number, page = 1) {
   const owner = new Types.ObjectId(ownerId);
   const filter: Record<string, unknown> = { ownerId: owner };

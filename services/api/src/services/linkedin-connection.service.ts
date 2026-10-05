@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { env } from "../config/env.js";
 import { AppError } from "../errors/app-error.js";
 import {
@@ -7,18 +7,25 @@ import {
   createLinkedInOauthState,
   disconnectLinkedInConnection as disconnectStoredLinkedInConnection,
   findLinkedInConnection,
+  findLinkedInConnectionByProviderMemberId,
   updateLinkedInConnection,
 } from "../repositories/linkedin.repository.js";
 import { decryptLinkedInSecret, encryptLinkedInSecret } from "./linkedin-crypto.js";
-import { linkedinOAuthClient, type LinkedInOAuthClient } from "../clients/linkedin-oauth.client.js";
+import { isLinkedInProviderOAuthError, linkedinOAuthClient, type LinkedInOAuthClient } from "../clients/linkedin-oauth.client.js";
 
 const stateLifetimeMs = 10 * 60 * 1000;
 const allowedReturnPath = "/dashboard?tab=connections";
+
+export function parseLinkedInScopes(value: string | string[]): string[] {
+  const source = Array.isArray(value) ? value.join(" ") : value;
+  return source.split(/[,\s]+/).filter(Boolean);
+}
 
 export interface LinkedInConnectionRepository {
   consumeState: typeof consumeLinkedInOauthState;
   createState: typeof createLinkedInOauthState;
   findConnection: typeof findLinkedInConnection;
+  findConnectionByProviderMemberId?: typeof findLinkedInConnectionByProviderMemberId;
   createConnection: typeof createLinkedInConnection;
   updateConnection: typeof updateLinkedInConnection;
   disconnectConnection: typeof disconnectStoredLinkedInConnection;
@@ -28,6 +35,7 @@ const defaultRepository: LinkedInConnectionRepository = {
   consumeState: consumeLinkedInOauthState,
   createState: createLinkedInOauthState,
   findConnection: findLinkedInConnection,
+  findConnectionByProviderMemberId: findLinkedInConnectionByProviderMemberId,
   createConnection: createLinkedInConnection,
   updateConnection: updateLinkedInConnection,
   disconnectConnection: disconnectStoredLinkedInConnection,
@@ -39,6 +47,34 @@ function hash(value: string): string {
 
 function randomValue(): string {
   return randomBytes(32).toString("base64url");
+}
+
+function logCallbackFailure(stage: string, errorCode: string, error?: unknown): void {
+  const diagnostic = error instanceof AppError ? error.diagnostic : undefined;
+  const providerError = diagnostic?.providerError;
+  console.error(JSON.stringify({
+    event: "linkedin_oauth_callback_failed",
+    stage,
+    errorCode,
+    ...(typeof diagnostic?.providerStatus === "number" ? { providerStatus: diagnostic.providerStatus } : {}),
+    ...(typeof providerError === "string" && isLinkedInProviderOAuthError(providerError) ? { providerError } : {}),
+  }));
+}
+
+function logCallbackStage(stage: string, details: Record<string, boolean | number | string>): void {
+  console.debug(JSON.stringify({
+    event: "linkedin_oauth_callback_stage",
+    stage,
+    ...details,
+  }));
+}
+
+function redirectResult(redirect: string): string {
+  try {
+    return new URL(redirect).searchParams.get("linkedin") ?? "missing";
+  } catch {
+    return "invalid";
+  }
 }
 
 function requireEnabled(): void {
@@ -82,8 +118,7 @@ export async function beginLinkedInConnection(ownerId: string, sessionCookie: st
   }
   const state = randomValue();
   const verifier = randomValue();
-  const challenge = hash(verifier);
-  const scopes = (posting ? env.LINKEDIN_POSTING_SCOPES : env.LINKEDIN_SCOPES).split(/\s+/).filter(Boolean);
+  const scopes = parseLinkedInScopes(posting ? env.LINKEDIN_POSTING_SCOPES : env.LINKEDIN_SCOPES);
   await repository.createState({
     stateHash: hash(state),
     ownerId,
@@ -100,9 +135,12 @@ export async function beginLinkedInConnection(ownerId: string, sessionCookie: st
     redirect_uri: env.LINKEDIN_REDIRECT_URI,
     state,
     scope: scopes.join(" "),
-    code_challenge: challenge,
-    code_challenge_method: "S256",
   });
+  console.info(JSON.stringify({
+    postingRequested: posting,
+    requestedScopes: scopes,
+    authorizationUrlScope: parseLinkedInScopes(query.get("scope") ?? ""),
+  }));
   return { authorizationUrl: `https://www.linkedin.com/oauth/v2/authorization?${query.toString()}` };
 }
 
@@ -115,32 +153,90 @@ export async function completeLinkedInConnection(
   repository: LinkedInConnectionRepository = defaultRepository,
 ): Promise<string> {
   const failurePath = `${env.WEB_ORIGIN}${allowedReturnPath}&linkedin=error`;
-  if (!state || !sessionCookie) return failurePath;
-  const consumed = await repository.consumeState(hash(state), hash(sessionCookie), new Date());
-  if (!consumed) return failurePath;
+  if (!state || !sessionCookie) {
+    logCallbackFailure("state_validation", "LINKEDIN_CALLBACK_STATE_INVALID");
+    return failurePath;
+  }
+  let consumed;
+  try {
+    consumed = await repository.consumeState(hash(state), hash(sessionCookie), new Date());
+  } catch {
+    logCallbackFailure("state_validation", "LINKEDIN_CALLBACK_STATE_LOOKUP_FAILED");
+    return failurePath;
+  }
+  if (!consumed) {
+    logCallbackFailure("state_validation", "LINKEDIN_CALLBACK_STATE_INVALID");
+    return failurePath;
+  }
+  logCallbackStage("state_validation", { valid: true });
   const returnPath = consumed.returnPath;
   const resultPath = `${env.WEB_ORIGIN}${returnPath}`;
-  if (providerError || !code || !env.LINKEDIN_TOKEN_ENCRYPTION_KEY) return `${resultPath}&linkedin=denied`;
+  if (providerError || !code || !env.LINKEDIN_TOKEN_ENCRYPTION_KEY) {
+    logCallbackFailure("provider_consent", providerError ? "LINKEDIN_PROVIDER_DENIED" : "LINKEDIN_CALLBACK_CODE_MISSING");
+    const redirect = `${resultPath}&linkedin=denied`;
+    logCallbackStage("final_redirect", { result: redirectResult(redirect) });
+    return redirect;
+  }
 
-  const verifier = decryptLinkedInSecret(consumed.codeVerifierEncrypted, env.LINKEDIN_TOKEN_ENCRYPTION_KEY);
+  let verifier: string;
+  try {
+    verifier = decryptLinkedInSecret(consumed.codeVerifierEncrypted, env.LINKEDIN_TOKEN_ENCRYPTION_KEY);
+  } catch {
+    logCallbackFailure("verifier_decryption", "LINKEDIN_VERIFIER_DECRYPTION_FAILED");
+    const redirect = `${resultPath}&linkedin=error`;
+    logCallbackStage("final_redirect", { result: redirectResult(redirect) });
+    return redirect;
+  }
   let token;
   let identity;
   try {
     token = await client.exchangeCode(code, verifier);
+  } catch (error) {
+    logCallbackFailure("token_exchange", error instanceof AppError ? error.code : "LINKEDIN_TOKEN_EXCHANGE_FAILED", error);
+    const redirect = `${resultPath}&linkedin=error`;
+    logCallbackStage("final_redirect", { result: redirectResult(redirect) });
+    return redirect;
+  }
+  logCallbackStage("token_exchange", { success: true });
+  try {
     identity = await client.getMemberIdentity(token.access_token);
   } catch (error) {
-    if (error instanceof AppError) return `${resultPath}&linkedin=error`;
-    throw error;
+    logCallbackFailure("userinfo", error instanceof AppError ? error.code : "LINKEDIN_IDENTITY_FAILED", error);
+    const redirect = `${resultPath}&linkedin=error`;
+    logCallbackStage("final_redirect", { result: redirectResult(redirect) });
+    return redirect;
   }
-  const existing = await repository.findConnection(String(consumed.ownerId));
+  logCallbackStage("userinfo", { success: true });
+
+  let existing;
+  try {
+    existing = await repository.findConnection(String(consumed.ownerId));
+  } catch {
+    logCallbackFailure("persistence_lookup", "LINKEDIN_CONNECTION_LOOKUP_FAILED");
+    const redirect = `${resultPath}&linkedin=error`;
+    logCallbackStage("final_redirect", { result: redirectResult(redirect) });
+    return redirect;
+  }
   if (existing && existing.connectionGeneration !== consumed.connectionGeneration) {
-    return `${resultPath}&linkedin=stale`;
+    const redirect = `${resultPath}&linkedin=stale`;
+    logCallbackStage("final_redirect", { result: redirectResult(redirect) });
+    return redirect;
   }
   if (existing && existing.providerMemberId !== identity.sub) {
-    return `${resultPath}&linkedin=identity_mismatch`;
+    const redirect = `${resultPath}&linkedin=identity_mismatch`;
+    logCallbackStage("final_redirect", { result: redirectResult(redirect) });
+    return redirect;
   }
 
-  const grantedScopes = (token.scope ?? env.LINKEDIN_SCOPES).split(/\s+/).filter(Boolean);
+  const grantedScopes = parseLinkedInScopes(token.scope ?? consumed.requestedScopes);
+  const postingCapability = grantedScopes.includes("w_member_social");
+  console.info(JSON.stringify({
+    requestedScopes: consumed.requestedScopes,
+    tokenScopePresent: token.scope !== undefined,
+    ...(token.scope !== undefined ? { tokenScopes: parseLinkedInScopes(token.scope) } : {}),
+    finalGrantedScopes: grantedScopes,
+    finalPostingCapability: postingCapability,
+  }));
   const input = {
     ownerId: consumed.ownerId,
     providerMemberId: identity.sub,
@@ -152,22 +248,45 @@ export async function completeLinkedInConnection(
       : null,
     expiresAt: new Date(Date.now() + token.expires_in * 1000),
     grantedScopes,
-    capabilities: { identity: grantedScopes.includes("openid"), posting: grantedScopes.includes("w_member_social") },
+    capabilities: { identity: grantedScopes.includes("openid"), posting: postingCapability },
     status: "connected",
     connectionGeneration: (existing?.connectionGeneration ?? 0) + 1,
   };
-  if (existing)   await repository.updateConnection(String(consumed.ownerId), input);
-  else {
-    try {
-      await repository.createConnection(input);
-    } catch (error) {
-      if (error instanceof Error && "code" in error && (error as { code?: unknown }).code === 11000) {
-        return `${resultPath}&linkedin=identity_in_use`;
+  try {
+    if (existing) await repository.updateConnection(String(consumed.ownerId), input);
+    else {
+      try {
+        await repository.createConnection(input);
+      } catch (error) {
+        if (error instanceof Error && "code" in error && (error as { code?: unknown }).code === 11000) {
+          const correlationId = randomUUID();
+          const conflicting = repository.findConnectionByProviderMemberId
+            ? await repository.findConnectionByProviderMemberId(identity.sub)
+            : null;
+          console.error(JSON.stringify({
+            event: "linkedin_oauth_identity_in_use",
+            correlationId,
+            currentOwnerId: String(consumed.ownerId),
+            conflictingConnectionId: conflicting?._id ? String(conflicting._id) : null,
+            conflictingOwnerId: conflicting?.ownerId ? String(conflicting.ownerId) : null,
+          }));
+          const redirect = `${resultPath}&linkedin=identity_in_use`;
+          logCallbackStage("final_redirect", { result: redirectResult(redirect) });
+          return redirect;
+        }
+        throw error;
       }
-      throw error;
     }
+  } catch {
+    logCallbackFailure("persistence_write", "LINKEDIN_CONNECTION_SAVE_FAILED");
+    const redirect = `${resultPath}&linkedin=error`;
+    logCallbackStage("final_redirect", { result: redirectResult(redirect) });
+    return redirect;
   }
-  return `${resultPath}&linkedin=connected`;
+  logCallbackStage("persistence_write", { success: true });
+  const redirect = `${resultPath}&linkedin=connected`;
+  logCallbackStage("final_redirect", { result: redirectResult(redirect) });
+  return redirect;
 }
 
 export async function disconnectLinkedInConnection(ownerId: string, repository: LinkedInConnectionRepository = defaultRepository): Promise<void> {

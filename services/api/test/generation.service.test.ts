@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Types } from "mongoose";
+import { AppError } from "../src/errors/app-error.js";
 import type { AiGenerationClient } from "../src/clients/ai-service.client.js";
 import type { SignalDocument } from "../src/models/signal.model.js";
 import type { GenerationDocument } from "../src/models/generation.model.js";
@@ -10,6 +11,8 @@ import {
   editGenerationVariationForSignal,
   scheduleGenerationVariationForSignal,
   clearGenerationVariationScheduleForSignal,
+  generationUsageOperationKey,
+  shouldMarkAiOperationUncertain,
   type GenerationRepositoryBoundary,
 } from "../src/services/generation.service.js";
 import type {
@@ -143,6 +146,13 @@ test("ownership failure does not call AI", async () => {
   assert.equal(calls.ai, 0);
 });
 
+test("generation usage identity is unique to the Signal lease attempt", () => {
+  assert.notEqual(
+    generationUsageOperationKey(signalId, "lease-one"),
+    generationUsageOperationKey(signalId, "lease-two"),
+  );
+});
+
 test("existing Generation returns without calling AI and omits private fields", async () => {
   const { repository, client, calls } = setup({ existing: makeGeneration() });
 
@@ -190,6 +200,25 @@ test("invalid output is never persisted", async () => {
     { code: "AI_INVALID_RESPONSE" },
   );
   assert.equal(calls.creates, 0);
+});
+
+test("received invalid AI responses release admission instead of becoming uncertain", () => {
+  assert.equal(
+    shouldMarkAiOperationUncertain(
+      new AppError(502, "AI_INVALID_RESPONSE", "The AI provider returned an invalid response"),
+    ),
+    false,
+  );
+  assert.equal(
+    shouldMarkAiOperationUncertain(
+      new AppError(502, "AI_PROVIDER_ERROR", "The AI provider request failed"),
+    ),
+    true,
+  );
+  assert.equal(
+    shouldMarkAiOperationUncertain(new AppError(504, "AI_PROVIDER_TIMEOUT", "The AI provider timed out")),
+    true,
+  );
 });
 
 test("concurrent calls for one owner and Signal share one provider operation", async () => {

@@ -1,5 +1,6 @@
 import { env } from "../config/env.js";
 import { AppError } from "../errors/app-error.js";
+import { randomUUID } from "node:crypto";
 import {
   aiErrorResponseSchema,
   aiGenerationResponseSchema,
@@ -40,6 +41,7 @@ export class AiServiceClient implements AiGenerationClient {
         headers: {
           "Content-Type": "application/json",
           "X-Internal-API-Key": this.internalApiKey,
+          "X-Correlation-ID": randomUUID(),
         },
         // The context field is only included on the wire when non-empty, so an
         // ungrounded request produces the exact same request body as before this

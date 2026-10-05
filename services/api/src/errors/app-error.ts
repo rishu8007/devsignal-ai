@@ -7,6 +7,7 @@ export class AppError extends Error {
   public readonly code: string;
   public readonly operational: boolean;
   public readonly details: PublicErrorDetails | undefined;
+  public readonly diagnostic: Record<string, string | number> | undefined;
 
   public constructor(
     statusCode: number,
@@ -14,6 +15,7 @@ export class AppError extends Error {
     message: string,
     operational = true,
     details?: PublicErrorDetails,
+    diagnostic?: Record<string, string | number>,
   ) {
     super(message);
     this.name = "AppError";
@@ -21,5 +23,6 @@ export class AppError extends Error {
     this.code = code;
     this.operational = operational;
     this.details = details;
+    this.diagnostic = diagnostic;
   }
 }

@@ -94,9 +94,12 @@ class RetrievalService:
         _validate_limit(limit, self._max_result_count)
         try:
             if hasattr(self._embedding_provider, "embed_with_usage"):
-                vectors, usage = await self._embedding_provider.embed_with_usage([query])
+                vectors, usage = await self._embedding_provider.embed_with_usage(
+                    [query],
+                    purpose="query",
+                )
             else:
-                vectors = await self._embedding_provider.embed([query])
+                vectors = await self._embedding_provider.embed([query], purpose="query")
                 usage = None
         except EmbeddingProviderError as exception:
             raise RetrievalError(exception.kind) from exception
@@ -159,7 +162,10 @@ def _validate_embedding(
     for value in vector:
         if isinstance(value, bool) or not isinstance(value, (int, float)):
             raise RetrievalError("invalid_embedding")
-        numeric_value = float(value)
+        try:
+            numeric_value = float(value)
+        except OverflowError as exception:
+            raise RetrievalError("invalid_embedding") from exception
         if not math.isfinite(numeric_value):
             raise RetrievalError("invalid_embedding")
         normalized.append(numeric_value)

@@ -13,6 +13,8 @@ import { aiIndexingClient, type AiIndexingClient } from "../clients/indexing.cli
 import { admitAiOperation, aggregateProviderUsage, completeAiOperation, markAiDispatched, markAiUncertain, releaseAiOperation } from "./usage.service.js";
 
 const INDEXING_LEASE_MS = Math.max(env.AI_SERVICE_TIMEOUT_MS + 30_000, 180_000);
+const ACTIVE_EMBEDDING_MODEL = env.AI_EMBEDDING_MODEL;
+const ACTIVE_EMBEDDING_DIMENSIONS = env.AI_EMBEDDING_DIMENSIONS;
 
 export interface IndexingRepository {
   findKnowledgeSourceForIndexing: typeof findKnowledgeSourceForIndexing;
@@ -70,8 +72,8 @@ export async function indexKnowledgeSourceForUser(
     current.processingStatus === "indexed" &&
     current.indexedContentVersion === current.contentVersion &&
     current.indexedChunkerVersion &&
-    current.indexedEmbeddingModel &&
-    current.indexedDimensions &&
+    current.indexedEmbeddingModel === ACTIVE_EMBEDDING_MODEL &&
+    current.indexedDimensions === ACTIVE_EMBEDDING_DIMENSIONS &&
     current.indexedChunkCount
   ) {
     console.log(`[indexing] ${correlationId} already-indexed version=${current.contentVersion}`);
@@ -92,6 +94,8 @@ export async function indexKnowledgeSourceForUser(
     current.contentVersion,
     attemptId,
     new Date(now().getTime() + INDEXING_LEASE_MS),
+    ACTIVE_EMBEDDING_MODEL,
+    ACTIVE_EMBEDDING_DIMENSIONS,
   );
   if (!claimed) {
     const latest = await repository.findKnowledgeSourceForIndexing(ownerId, sourceId);

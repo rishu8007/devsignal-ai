@@ -13,6 +13,7 @@ from openai import (
 )
 
 from app.providers.errors import EmbeddingProviderError
+from app.providers.protocol import EmbeddingPurpose
 from app.schemas.common import UsageMetadata
 
 EMBEDDING_MODEL = "text-embedding-3-small"
@@ -53,13 +54,23 @@ class OpenAIEmbeddingProvider:
         self._model = model
         self._dimensions = dimensions
 
-    async def embed(self, texts: Sequence[str]) -> list[list[float]]:
-        vectors, _ = await self.embed_with_usage(texts)
+    async def embed(
+        self,
+        texts: Sequence[str],
+        *,
+        purpose: EmbeddingPurpose = "document",
+    ) -> list[list[float]]:
+        vectors, _ = await self.embed_with_usage(texts, purpose=purpose)
         return vectors
 
     async def embed_with_usage(
-        self, texts: Sequence[str]
+        self,
+        texts: Sequence[str],
+        *,
+        purpose: EmbeddingPurpose = "document",
     ) -> tuple[list[list[float]], UsageMetadata | None]:
+        if purpose not in ("document", "query"):
+            raise ValueError("Unknown embedding purpose")
         input_texts = list(texts)
         _validate_input_texts(input_texts)
 
@@ -148,7 +159,10 @@ def _validate_vector(vector: object, expected_dimensions: int) -> list[float]:
     for value in vector:
         if isinstance(value, bool) or not isinstance(value, (int, float)):
             raise EmbeddingProviderError("invalid_response")
-        numeric_value = float(value)
+        try:
+            numeric_value = float(value)
+        except OverflowError as exception:
+            raise EmbeddingProviderError("invalid_response") from exception
         if not math.isfinite(numeric_value):
             raise EmbeddingProviderError("invalid_response")
         normalized.append(numeric_value)

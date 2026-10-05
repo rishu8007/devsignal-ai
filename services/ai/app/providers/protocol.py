@@ -1,5 +1,5 @@
 from collections.abc import Sequence
-from typing import Protocol
+from typing import Literal, Protocol
 
 from app.schemas.generation import GenerationRequest, ProviderGenerationResult
 
@@ -10,5 +10,13 @@ class GenerationProvider(Protocol):
     async def close(self) -> None: ...
 
 
+EmbeddingPurpose = Literal["document", "query"]
+
+
 class EmbeddingProvider(Protocol):
-    async def embed(self, texts: Sequence[str]) -> list[list[float]]: ...
+    async def embed(
+        self,
+        texts: Sequence[str],
+        *,
+        purpose: EmbeddingPurpose = "document",
+    ) -> list[list[float]]: ...

@@ -1,16 +1,21 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { listKnowledgeSources, type PublicKnowledgeSource } from "@/lib/api/knowledge-source-client";
 import { createResearchBrief, getResearchBrief, listResearchBriefs, type ResearchBrief } from "@/lib/api/research-brief-client";
 import type { PublicSignal } from "@/lib/api/signal-client";
 
 export function ResearchBriefView({ signal, onClose }: { signal: PublicSignal; onClose: () => void }) {
+  const panelRef = useRef<HTMLElement>(null);
   const [sources, setSources] = useState<PublicKnowledgeSource[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
   const [briefs, setBriefs] = useState<ResearchBrief[]>([]);
   const [brief, setBrief] = useState<ResearchBrief | null>(null);
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  useEffect(() => {
+    panelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    panelRef.current?.focus({ preventScroll: true });
+  }, []);
   useEffect(() => { void Promise.all([listKnowledgeSources({ page: 1, limit: 20, processingStatus: "indexed" }), listResearchBriefs(signal.id)]).then(([sourceResult, saved]) => { setSources(sourceResult.sources); setBriefs(saved); }).catch(() => setMessage("Unable to load research sources or saved briefs.")); }, [signal.id]);
   async function research() {
     setPending(true); setMessage(null);
@@ -19,7 +24,7 @@ export function ResearchBriefView({ signal, onClose }: { signal: PublicSignal; o
   async function reopen(saved: ResearchBrief) {
     try { setBrief(await getResearchBrief(signal.id, saved.id)); } catch { setMessage("Unable to reopen this saved brief."); }
   }
-  return <section className="mt-6 space-y-5 rounded-xl border border-slate-200 bg-white p-5" aria-label="Research brief">
+  return <section ref={panelRef} tabIndex={-1} className="mt-6 space-y-5 rounded-xl border border-slate-200 bg-white p-5 focus:outline-none focus:ring-2 focus:ring-indigo-500" aria-label="Research brief">
     <div className="flex items-start justify-between gap-4"><div><p className="text-sm font-semibold uppercase tracking-[0.16em] text-indigo-600">Research</p><h2 className="mt-2 text-xl font-semibold">{signal.topic}</h2><p className="text-sm text-slate-500">Signal revision {signal.revision}; research never edits the Signal.</p></div><button type="button" onClick={onClose} className="rounded border px-3 py-2 text-sm">Return to Signal</button></div>
     <fieldset><legend className="font-medium">Selected indexed Knowledge sources</legend>{sources.map((source) => <label key={source.id} className="mt-2 flex gap-2 text-sm"><input type="checkbox" checked={selected.includes(source.id)} disabled={!selected.includes(source.id) && selected.length >= 5} onChange={() => setSelected((items) => items.includes(source.id) ? items.filter((id) => id !== source.id) : [...items, source.id])}/>{source.title}</label>)}</fieldset>
     <button type="button" disabled={pending || selected.length === 0} onClick={() => void research()} className="rounded bg-indigo-600 px-4 py-2 text-white disabled:opacity-50">{pending ? "Researching…" : "Build research brief"}</button>

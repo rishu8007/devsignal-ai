@@ -210,6 +210,19 @@ export function hasActiveSignalGenerationLease(
   }).then(Boolean);
 }
 
+export function hasAnyActiveSignalGenerationLease(
+  ownerId: string,
+  signalId: string,
+  now: Date,
+): Promise<boolean> {
+  return SignalModel.exists({
+    _id: signalId,
+    ownerId,
+    generationLeaseState: { $in: ["generating", "persisting"] },
+    generationLeaseExpiresAt: { $gt: now },
+  }).then(Boolean);
+}
+
 export function releaseSignalGenerationLease(
   ownerId: string,
   signalId: string,

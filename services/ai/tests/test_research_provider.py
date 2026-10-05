@@ -2,7 +2,7 @@ import asyncio
 
 import pytest
 
-from app.providers.openai_provider import ProviderError
+from app.providers.errors import ProviderError
 from app.providers.research_brief_provider import ResearchBriefProvider
 from app.schemas.research_brief import ResearchBriefRequest
 

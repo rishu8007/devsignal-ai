@@ -33,7 +33,16 @@ const environmentSchema = z.object({
     })
     .default("http://127.0.0.1:8000"),
   AI_INTERNAL_API_KEY: z.string().min(32).optional(),
+  AI_RECONCILIATION_ADMIN_KEY: z.string().min(32).optional(),
+  GENERATION_RATE_LIMIT_ENABLED: z
+    .enum(["true", "false"])
+    .default("true")
+    .transform((value) => value === "true"),
   AI_SERVICE_TIMEOUT_MS: z.coerce.number().int().min(1000).max(300000).default(150000),
+  AI_EMBEDDING_MODEL: z.literal("gemini-embedding-2").default("gemini-embedding-2"),
+  AI_EMBEDDING_DIMENSIONS: z.coerce.number().int().refine((value) => value === 1536, {
+    message: "AI_EMBEDDING_DIMENSIONS must be 1536 for Gemini embeddings.",
+  }).default(1536),
   AI_DAILY_OPERATION_LIMIT: z.coerce.number().int().min(1).max(100000).default(100),
   AI_APPLICATION_DAILY_OPERATION_LIMIT: z.coerce.number().int().min(1).max(1000000).default(10000),
   AI_USAGE_FAIL_CLOSED: z.enum(["true", "false"]).default("true").transform((value) => value === "true"),
@@ -43,6 +52,7 @@ const environmentSchema = z.object({
   LINKEDIN_CLIENT_SECRET: z.string().min(1).optional(),
   LINKEDIN_REDIRECT_URI: z.string().url().optional(),
   LINKEDIN_TOKEN_ENCRYPTION_KEY: z.string().optional(),
+  LINKEDIN_OAUTH_DIAGNOSTICS_ENABLED: z.enum(["true", "false"]).default("false").transform((value) => value === "true"),
   LINKEDIN_SCOPES: z.string().default("openid profile email"),
   LINKEDIN_POSTING_SCOPES: z.string().default("openid profile email w_member_social"),
   LINKEDIN_API_VERSION: z.string().regex(/^\d{6}$/).default("202601"),
@@ -116,24 +126,5 @@ if (env.LINKEDIN_ENABLED || linkedinPartiallyConfigured) {
   const key = Buffer.from(env.LINKEDIN_TOKEN_ENCRYPTION_KEY, "base64");
   if (key.length !== 32) {
     throw new Error("LINKEDIN_TOKEN_ENCRYPTION_KEY must be a base64-encoded 32-byte key.");
-  }
-}
-
-const githubPartiallyConfigured = Boolean(
-  env.GITHUB_APP_CLIENT_ID
-  || env.GITHUB_APP_CLIENT_SECRET
-  || env.GITHUB_APP_ID
-  || env.GITHUB_APP_SLUG
-  || env.GITHUB_APP_PRIVATE_KEY
-  || env.GITHUB_REDIRECT_URI
-  || env.GITHUB_TOKEN_ENCRYPTION_KEY,
-);
-
-if (env.GITHUB_ENABLED || githubPartiallyConfigured) {
-  if (!env.GITHUB_APP_CLIENT_ID || !env.GITHUB_APP_CLIENT_SECRET || !env.GITHUB_APP_ID || !env.GITHUB_APP_SLUG || !env.GITHUB_APP_PRIVATE_KEY || !env.GITHUB_REDIRECT_URI) {
-    throw new Error("GitHub configuration is incomplete.");
-  }
-  if (!env.GITHUB_TOKEN_ENCRYPTION_KEY || Buffer.from(env.GITHUB_TOKEN_ENCRYPTION_KEY, "base64").length !== 32) {
-    throw new Error("GITHUB_TOKEN_ENCRYPTION_KEY must be a base64-encoded 32-byte key.");
   }
 }

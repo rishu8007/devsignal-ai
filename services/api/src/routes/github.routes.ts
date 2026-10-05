@@ -1,12 +1,13 @@
 import { Router } from "express";
 import { authenticationMiddleware } from "../middleware/authentication.middleware.js";
 import { validateParams, validateQuery, validateRequest } from "../middleware/validate-request.middleware.js";
-import { githubActivities, githubCallback, githubConnect, githubConvertActivity, githubDisconnect, githubRepositories, githubStatus, githubSync } from "../controllers/github-connection.controller.js";
+import { githubActivities, githubCallback, githubConnect, githubConvertActivity, githubDisconnect, githubRepositories, githubRepositoryList, githubStatus, githubSync } from "../controllers/github-connection.controller.js";
 import { githubActivityParamsSchema, githubActivityQuerySchema, githubRepositoriesSchema } from "../validation/github-connection.validation.js";
 export const githubRouter = Router();
 githubRouter.get("/github/callback", githubCallback);
 githubRouter.use(authenticationMiddleware);
 githubRouter.get("/github/status", githubStatus);
+githubRouter.get("/github/repositories", githubRepositoryList);
 githubRouter.post("/github/connect", githubConnect);
 githubRouter.delete("/github", githubDisconnect);
 githubRouter.put("/github/repositories", validateRequest(githubRepositoriesSchema), githubRepositories);

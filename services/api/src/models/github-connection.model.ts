@@ -9,7 +9,7 @@ const githubConnectionSchema = new Schema({
   accessTokenExpiresAt: { type: Date, required: true },
   status: { type: String, enum: ["connected", "revoked"], required: true, default: "connected" },
   connectionGeneration: { type: Number, required: true, default: 0 },
-  repositories: [{ id: { type: Number, required: true }, fullName: { type: String, required: true }, private: { type: Boolean, required: true }, defaultBranch: { type: String, required: true }, selected: { type: Boolean, required: true, default: true } }],
+  repositories: [{ id: { type: Number, required: true }, fullName: { type: String, required: true } }],
   sync: {
     status: { type: String, enum: ["idle", "syncing", "error"], required: true, default: "idle" },
     startedAt: { type: Date, default: null },

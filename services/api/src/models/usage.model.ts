@@ -5,7 +5,7 @@ const usageSchema = new Schema({
   windowStart: { type: Date, required: true, immutable: true },
   operationKey: { type: String, required: true, immutable: true },
   operationType: { type: String, required: true, immutable: true },
-  status: { type: String, required: true, enum: ["reserved", "dispatched", "completed", "released", "uncertain"], default: "reserved" },
+  status: { type: String, required: true, enum: ["reserved", "dispatched", "completed", "released", "uncertain", "reconciled"], default: "reserved" },
   expiresAt: { type: Date, required: true },
   dispatchStartedAt: { type: Date, default: null },
   completedAt: { type: Date, default: null },
@@ -15,6 +15,9 @@ const usageSchema = new Schema({
   model: { type: String, default: null },
   pricingBasis: { type: Schema.Types.Mixed, default: null },
   usageRecordedAt: { type: Date, default: null },
+  reconciledAt: { type: Date, default: null },
+  reconciledBy: { type: String, default: null, maxlength: 120 },
+  reconciliationReason: { type: String, default: null, maxlength: 500 },
 }, { timestamps: true, versionKey: false });
 usageSchema.index({ ownerId: 1, windowStart: 1, operationKey: 1 }, { unique: true });
 usageSchema.index({ ownerId: 1, operationKey: 1 }, { unique: true });

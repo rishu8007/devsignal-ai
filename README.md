@@ -1031,18 +1031,19 @@ Create files only from the tracked examples. The required values are:
   `JWT_ACCESS_SECRET` (at least 32 characters), JWT issuer/audience/TTL,
   `AUTH_COOKIE_NAME`, `AI_SERVICE_URL`, matching `AI_INTERNAL_API_KEY`, and
   `AI_SERVICE_TIMEOUT_MS`.
-- `services/ai/.env`: `APP_ENV`, `HOST`, `PORT`, `OPENAI_API_KEY`,
-  `OPENAI_MODEL`, embedding model/dimensions, `QDRANT_URL`,
-  `QDRANT_COLLECTION_NAME`, `QDRANT_TIMEOUT_SECONDS`, matching
-  `INTERNAL_API_KEY` (at least 32 characters), and `OPENAI_TIMEOUT_SECONDS`.
+- `services/ai/.env`: `APP_ENV`, `HOST`, `PORT`, `GEMINI_API_KEY`,
+  `GEMINI_MODEL`, `GEMINI_EMBEDDING_MODEL`, `GEMINI_EMBEDDING_DIMENSIONS`,
+  `QDRANT_URL`, `QDRANT_COLLECTION_NAME`,
+  `QDRANT_TIMEOUT_SECONDS`, matching `INTERNAL_API_KEY` (at least 32
+  characters), and `GEMINI_TIMEOUT_SECONDS`.
 - `apps/web/.env.local`: `NEXT_PUBLIC_API_BASE_URL`.
 
 `services/api/.env` and `services/ai/.env` must use the same internal key:
 the API sends `AI_INTERNAL_API_KEY` and FastAPI verifies `INTERNAL_API_KEY`.
-The examples use `gpt-5.6-luna` as the AI model default. Live indexing,
-retrieval, and generation can incur embedding or provider usage costs.
-Live generation requires a valid OpenAI key. Tests use a fake provider and do
-not call OpenAI.
+The examples use `gemini-3.8-flash` as the AI model default and
+`devsignal_knowledge_chunks_gemini_v1` for Gemini vectors. Live indexing,
+retrieval, and generation can incur provider usage costs. Live operations
+require a valid Gemini key. Tests use fake providers and do not call Gemini.
 
 ## Verification
 

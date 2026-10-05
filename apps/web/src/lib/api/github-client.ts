@@ -1,9 +1,11 @@
 import { request } from "./api-client";
 export type GithubRepository = { id: number; fullName: string; private: boolean; defaultBranch: string; selected: boolean };
+export type GithubSelectedRepository = Pick<GithubRepository, "id" | "fullName">;
 export type GithubActivity = { _id: string; repositoryFullName: string; kind: "commit" | "pull_request" | "release"; title: string; summary: string; url: string; occurredAt: string; authorLogin?: string | null; isPersonal: boolean; convertedSignalId?: string | null };
-export type GithubStatus = { enabled: boolean; status: "not_configured" | "disconnected" | "connected" | "revoked"; identity?: { login: string; githubUserId: string }; repositories: GithubRepository[]; sync?: { status: string; lastSuccessAt: string | null; lastError: string | null; nextEligibleAt?: string | null } };
+export type GithubStatus = { enabled: boolean; status: "not_configured" | "disconnected" | "connected" | "revoked"; identity?: { login: string; githubUserId: string }; repositories: GithubSelectedRepository[]; sync?: { status: string; lastSuccessAt: string | null; lastError: string | null; nextEligibleAt?: string | null } };
 const ok = (value: unknown): value is { success: true; data: Record<string, unknown> } => Boolean(value && typeof value === "object" && (value as { success?: unknown }).success === true && "data" in value);
 export function getGithubStatus() { return request("/connections/github/status", { method: "GET" }, ok).then((value) => value.data as GithubStatus); }
+export function listGithubRepositories() { return request("/connections/github/repositories", { method: "GET" }, ok).then((value) => value.data.repositories as GithubRepository[]); }
 export function connectGithub() { return request("/connections/github/connect", { method: "POST", body: "{}" }, ok).then((value) => value.data as { authorizationUrl: string }); }
 export function disconnectGithub() { return request("/connections/github", { method: "DELETE" }, ok); }
 export function selectGithubRepositories(repositoryIds: number[]) { return request("/connections/github/repositories", { method: "PUT", body: JSON.stringify({ repositoryIds }) }, ok); }

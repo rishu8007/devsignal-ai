@@ -1,7 +1,7 @@
 from collections.abc import Sequence
 
 from app.errors import ApplicationError
-from app.providers.openai_provider import ProviderError
+from app.providers.errors import ProviderError
 from app.providers.protocol import GenerationProvider
 from app.schemas.common import UsageMetadata
 from app.schemas.generation import (
@@ -30,8 +30,24 @@ async def generate_posts_with_usage(
 ) -> tuple[GenerationData, UsageMetadata | None]:
     try:
         result = await provider.generate(request)
-        variations = _normalize_variations(result.output.variations)
-        _validate_citations(variations, request)
+        try:
+            variations = _normalize_variations(result.output.variations)
+        except (TypeError, ValueError) as exception:
+            raise ProviderError(
+                "invalid_response",
+                exception_class=type(exception).__name__,
+                stage="variation_normalization",
+                reason=_validation_reason(exception),
+            ) from exception
+        try:
+            _validate_citations(variations, request)
+        except (TypeError, ValueError) as exception:
+            raise ProviderError(
+                "invalid_response",
+                exception_class=type(exception).__name__,
+                stage="citation_validation",
+                reason=_validation_reason(exception),
+            ) from exception
     except ProviderError as exception:
         error_map = {
             "timeout": (504, "AI_PROVIDER_TIMEOUT", "The AI provider timed out"),
@@ -63,6 +79,21 @@ async def generate_posts_with_usage(
             "The AI provider returned an invalid response",
         ) from exception
     return GenerationData(variations=variations, model=result.model), result.usage
+
+
+def _validation_reason(exception: TypeError | ValueError) -> str:
+    allowed = {
+        "invalid variation count",
+        "invalid content",
+        "duplicate angle",
+        "invalid angles",
+        "duplicate citation",
+        "unknown citation",
+        "missing citation",
+        "unexpected citation",
+    }
+    message = str(exception)
+    return message if message in allowed else "validation_failed"
 
 
 def _normalize_variations(

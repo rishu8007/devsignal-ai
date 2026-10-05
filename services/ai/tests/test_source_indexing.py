@@ -2,7 +2,8 @@ from dataclasses import dataclass, field
 
 import pytest
 
-from app.providers.embedding_provider import EmbeddingProviderError
+from app.providers.errors import EmbeddingProviderError
+from app.providers.protocol import EmbeddingPurpose
 from app.repositories.qdrant_repository import (
     ChunkVectorRecord,
     QdrantRepositoryError,
@@ -30,9 +31,16 @@ class FakeEmbeddingProvider:
     vectors: list[list[float]]
     error: Exception | None = None
     calls: list[list[str]] = field(default_factory=list)
+    purposes: list[EmbeddingPurpose] = field(default_factory=list)
 
-    async def embed(self, texts: list[str]) -> list[list[float]]:
+    async def embed(
+        self,
+        texts: list[str],
+        *,
+        purpose: EmbeddingPurpose = "document",
+    ) -> list[list[float]]:
         self.calls.append(texts)
+        self.purposes.append(purpose)
         if self.error is not None:
             raise self.error
         count = len(texts)
@@ -84,6 +92,7 @@ async def test_indexes_single_batch_and_returns_metadata_only() -> None:
     assert result.dimensions == 3
     assert result.indexed_chunk_count == 1
     assert len(provider.calls) == 1
+    assert provider.purposes == ["document"]
     assert len(repository.records) == 1
     assert repository.records[0].owner_id == OWNER_ID
     assert repository.records[0].vector == [0.0, 0.0, 1.0]
@@ -154,6 +163,40 @@ async def test_embedding_failure_prevents_all_vector_writes() -> None:
         )
 
     assert exception.value.kind == "rate_limit"
+    assert repository.records == []
+
+
+@pytest.mark.anyio
+async def test_later_embedding_batch_failure_prevents_all_vector_writes() -> None:
+    class SecondBatchFails(FakeEmbeddingProvider):
+        async def embed(
+            self,
+            texts: list[str],
+            *,
+            purpose: EmbeddingPurpose = "document",
+        ) -> list[list[float]]:
+            self.calls.append(texts)
+            self.purposes.append(purpose)
+            if len(self.calls) == 2:
+                raise EmbeddingProviderError("provider")
+            return self.vectors[: len(texts)]
+
+    content = "x" * 1000 + "y" * 1000 + "z" * 1000
+    provider = SecondBatchFails([[0.0, 0.0, 1.0]] * 4)
+    repository = FakeRepository()
+    configuration = EmbeddingConfiguration(
+        model="test-embedding",
+        dimensions=3,
+        max_batch_size=1,
+        max_batch_code_points=10_000,
+    )
+
+    with pytest.raises(SourceIndexingError) as exception:
+        await SourceIndexingService(provider, repository, configuration).index(source(content))
+
+    assert exception.value.kind == "provider"
+    assert len(provider.calls) == 2
+    assert provider.purposes == ["document", "document"]
     assert repository.records == []
 
 

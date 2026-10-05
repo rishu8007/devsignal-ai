@@ -179,7 +179,7 @@ export async function syncGithubActivities(ownerId: string) {
   const progress = [...(connection.sync?.progress ?? [])] as SyncProgress[];
   try {
     const token = await ensureInstallationToken(connection, ownerId);
-    for (const repo of connection.repositories.filter((value) => value.selected !== false).slice(0, 20)) {
+    for (const repo of connection.repositories.slice(0, 20)) {
       const current = await findGithubConnection(ownerId);
       if (!current || current.status !== "connected" || current.connectionGeneration !== connection.connectionGeneration) throw new AppError(409, "GITHUB_CONNECTION_CHANGED", "GitHub connection changed during synchronization.");
       for (const kind of ["commit", "pull_request", "release"] as GithubKind[]) await syncKind(ownerId, connection, repo, kind, token, progress);

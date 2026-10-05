@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { ApiClientError } from "@/lib/api/api-client";
 import {
   approveGeneration,
@@ -44,7 +45,24 @@ import { AnalyticsView } from "@/components/dashboard/analytics-view";
 import { UsageView } from "@/components/dashboard/usage-view";
 import { GithubConnectionCard } from "@/components/dashboard/github-connection-card";
 
+const workspaceTabs: readonly WorkspaceTab[] = [
+  "create",
+  "drafts",
+  "calendar",
+  "knowledge",
+  "profile",
+  "planner",
+  "connections",
+  "analytics",
+  "usage",
+];
+
+function parseWorkspaceTab(value: string | null): WorkspaceTab | null {
+  return workspaceTabs.find((tab) => tab === value) ?? null;
+}
+
 export function DashboardWorkspace() {
+  const searchParams = useSearchParams();
   const { invalidateSession, status: authStatus } = useAuth();
   const [signals, setSignals] = useState<PublicSignal[]>([]);
   const [total, setTotal] = useState<number | null>(null);
@@ -58,6 +76,7 @@ export function DashboardWorkspace() {
   const [generation, setGeneration] = useState<PublicGeneration | null>(null);
   const [generationLoading, setGenerationLoading] = useState(false);
   const [generationError, setGenerationError] = useState<string | null>(null);
+  const [generationCreationFailed, setGenerationCreationFailed] = useState(false);
   const [generationPending, setGenerationPending] = useState(false);
   const [useKnowledge, setUseKnowledge] = useState(false);
   const [mutationPending, setMutationPending] = useState(false);
@@ -65,13 +84,16 @@ export function DashboardWorkspace() {
   const [mutationUncertain, setMutationUncertain] = useState(false);
   const [editingVariationId, setEditingVariationId] = useState<string | null>(null);
   const [editorContent, setEditorContent] = useState("");
-  const [activeTab, setActiveTab] = useState<WorkspaceTab>("create");
+  const [activeTab, setActiveTab] = useState<WorkspaceTab>(
+    () => parseWorkspaceTab(searchParams.get("tab")) ?? "create",
+  );
   const [draftFilter, setDraftFilter] = useState<"all" | "draft" | "approved">("all");
   const [draftPage, setDraftPage] = useState(1);
   const [draftLibrary, setDraftLibrary] = useState<DraftLibraryResponse | null>(null);
   const [draftsLoading, setDraftsLoading] = useState(false);
   const [draftsError, setDraftsError] = useState<string | null>(null);
   const [generationOutcomeUncertain, setGenerationOutcomeUncertain] = useState(false);
+  const [generationCooldownSeconds, setGenerationCooldownSeconds] = useState(0);
   const [calendarMonth, setCalendarMonth] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
   const [calendarPage, setCalendarPage] = useState(1);
   const [calendarData, setCalendarData] = useState<CalendarResponse | null>(null);
@@ -243,7 +265,9 @@ export function DashboardWorkspace() {
     generationController.current = controller;
     setGenerationLoading(true);
     setGenerationError(null);
+    setGenerationCreationFailed(false);
     setGenerationOutcomeUncertain(false);
+    setGenerationCooldownSeconds(0);
     try {
       const result = await getGeneration(signal.id, controller.signal);
       if (!mounted.current || currentRequest !== generationRequestId.current) return;
@@ -331,6 +355,7 @@ export function DashboardWorkspace() {
     if (!selectedSignal || generation || generationPending || mutationPending) return;
     setGenerationPending(true);
     setGenerationError(null);
+    setGenerationCreationFailed(false);
     setGenerationOutcomeUncertain(false);
     setMutationError(null);
     setMutationUncertain(false);
@@ -352,18 +377,27 @@ export function DashboardWorkspace() {
         setGenerationOutcomeUncertain(true);
         setGenerationError("Generation may still be processing. Check for saved drafts before trying again.");
       } else if (error instanceof ApiClientError && error.code === "AI_GENERATION_REFUSED") {
+        setGenerationCreationFailed(true);
         setGenerationError("The requested drafts could not be generated.");
       } else if (
         error instanceof ApiClientError &&
         error.code === "GENERATION_KNOWLEDGE_UNAVAILABLE"
       ) {
+        setGenerationCreationFailed(true);
         setGenerationError(
           "No usable indexed knowledge context was found for this Signal. Your knowledge option remains selected.",
         );
       } else if (error instanceof ApiClientError && error.code === "GENERATION_RATE_LIMIT_EXCEEDED") {
+        setGenerationCreationFailed(true);
         setGenerationError("Generation is temporarily limited. Please try again later.");
+        setGenerationCooldownSeconds(error.retryAfterSeconds ?? 0);
       } else {
-        setGenerationError("Unable to generate drafts. Please try again.");
+        setGenerationCreationFailed(true);
+        setGenerationError(
+          error instanceof ApiClientError && error.message.trim()
+            ? error.message
+            : "Unable to generate drafts. Please try again.",
+        );
       }
     } finally {
       if (mounted.current) setGenerationPending(false);
@@ -377,6 +411,14 @@ export function DashboardWorkspace() {
     selectedSignal,
     useKnowledge,
   ]);
+
+  useEffect(() => {
+    if (generationCooldownSeconds <= 0) return;
+    const timer = window.setTimeout(() => {
+      setGenerationCooldownSeconds((current) => Math.max(0, current - 1));
+    }, 1000);
+    return () => window.clearTimeout(timer);
+  }, [generationCooldownSeconds]);
 
   const handleStartEditing = useCallback((variation: PublicDraft) => {
     if (mutationPending || editingVariationId !== null) return;
@@ -738,7 +780,7 @@ export function DashboardWorkspace() {
         loading={generationLoading}
         generating={generationPending}
         mutationPending={mutationPending}
-        error={generationError ?? (mutationUncertain ? mutationError : null)}
+        error={generationError}
         uncertain={generationOutcomeUncertain || mutationUncertain}
         mutationError={mutationError}
         editingVariationId={editingVariationId}
@@ -757,9 +799,14 @@ export function DashboardWorkspace() {
           if (selectedSignal) {
             setMutationError(null);
             setMutationUncertain(false);
-            void loadGeneration(selectedSignal);
+            if (generationCreationFailed && !generationOutcomeUncertain) {
+              void handleGenerate();
+            } else {
+              void loadGeneration(selectedSignal);
+            }
           }
         }}
+        cooldownSeconds={generationCooldownSeconds}
         onReview={(variationId) => setReviewTarget({ variationId })}
           />
           {reviewTarget && selectedSignal && generation && (

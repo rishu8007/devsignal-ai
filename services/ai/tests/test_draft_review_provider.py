@@ -3,7 +3,7 @@ import asyncio
 import pytest
 
 from app.providers.draft_review_provider import DraftReviewProvider
-from app.providers.openai_provider import ProviderError
+from app.providers.errors import ProviderError
 from app.schemas.draft_review import DraftReviewRequest
 
 

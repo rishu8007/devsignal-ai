@@ -40,6 +40,7 @@ interface DraftStudioProps {
   onGenerate: () => void;
   onRetry: () => void;
   onReview: (variationId: string) => void;
+  cooldownSeconds: number;
 }
 
 const labels: Record<GenerationAngle, string> = {
@@ -76,6 +77,7 @@ export function DraftStudio({
   onGenerate,
   onRetry,
   onReview,
+  cooldownSeconds,
 }: DraftStudioProps) {
   const [scheduleInputs, setScheduleInputs] = useState<Record<string, { date: string; time: string }>>({});
   const [selectedSource, setSelectedSource] = useState<{
@@ -228,16 +230,21 @@ export function DraftStudio({
           <button
             type="button"
             onClick={onRetry}
+            disabled={cooldownSeconds > 0}
             className="mt-4 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white"
           >
-            {uncertain ? "Check for saved drafts" : "Retry"}
+            {cooldownSeconds > 0
+              ? `Try again in ${cooldownSeconds}s`
+              : uncertain
+                ? "Check for saved drafts"
+                : "Retry"}
           </button>
         </div>
       )}
       {!loading && !error && signalTopic && !generation && (
         <>
           <p className="mt-5 text-sm text-slate-500">
-            No drafts have been generated for this Signal.
+            No drafts generated yet.
           </p>
           <label className="mx-auto mt-5 flex max-w-md items-start gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-left">
             <input
@@ -259,7 +266,7 @@ export function DraftStudio({
           <button
             type="button"
             onClick={onGenerate}
-            disabled={generating || mutationPending}
+            disabled={generating || mutationPending || cooldownSeconds > 0}
             className="mt-4 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
           >
             {generating ? "Generating three drafts..." : "Generate three drafts"}
@@ -308,7 +315,19 @@ export function DraftStudio({
                       </p>
                     )}
                     {mutationError && (
-                      <p className="mt-3 text-sm text-red-700" role="alert">{mutationError}</p>
+                      <div className="mt-3">
+                        <p className="text-sm text-red-700" role="alert">{mutationError}</p>
+                        {uncertain && (
+                          <button
+                            type="button"
+                            onClick={onRetry}
+                            disabled={mutationPending}
+                            className="mt-3 rounded-lg border border-amber-300 px-3 py-2 text-sm font-semibold text-amber-900 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            Check for saved drafts
+                          </button>
+                        )}
+                      </div>
                     )}
                     <div className="mt-4 flex flex-wrap gap-3">
                       <button

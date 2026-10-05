@@ -1,8 +1,8 @@
 "use client";
 import { useEffect, useState } from "react";
 import { ApiClientError } from "@/lib/api/api-client";
-import { convertGithubActivity, getGithubStatus, listGithubActivities, syncGithub, type GithubActivity, type GithubRepository, type GithubStatus } from "@/lib/api/github-client";
-export function GithubWorkView({ active, repositories }: { active: boolean; repositories: GithubRepository[] }) {
+import { convertGithubActivity, getGithubStatus, listGithubActivities, syncGithub, type GithubActivity, type GithubSelectedRepository, type GithubStatus } from "@/lib/api/github-client";
+export function GithubWorkView({ active, repositories }: { active: boolean; repositories: GithubSelectedRepository[] }) {
   const [items, setItems] = useState<GithubActivity[]>([]);
   const [kind, setKind] = useState<"all" | GithubActivity["kind"]>("all");
   const [repositoryId, setRepositoryId] = useState<number | undefined>();

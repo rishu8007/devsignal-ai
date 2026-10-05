@@ -1,6 +1,7 @@
 import { connectToDatabase, disconnectFromDatabase } from "./config/database.js";
 import { env } from "./config/env.js";
 import { ensureGithubIndexes, listGithubConnections } from "./repositories/github.repository.js";
+import { isGithubAccountConfigured } from "./services/github-account.service.js";
 import { syncGithubActivities } from "./services/github-connection.service.js";
 
 const intervalMs = env.GITHUB_SYNC_INTERVAL_MINUTES * 60 * 1000;
@@ -12,8 +13,8 @@ async function run() {
     try { await syncGithubActivities(connection.ownerId.toString()); } catch (error) { console.error("[github-sync] connection failed", error instanceof Error ? error.message : "unknown error"); }
   }
 }
-if (!env.GITHUB_SYNC_ENABLED) {
-  console.info("[github-sync] disabled");
+if (!env.GITHUB_SYNC_ENABLED || !isGithubAccountConfigured()) {
+  console.info("[github-sync] disabled or GitHub is not configured.");
   process.exit(0);
 }
 let running = true;

@@ -8,18 +8,21 @@ export class ApiClientError extends Error {
   public readonly status: number;
   public readonly code: string;
   public readonly details: ApiErrorDetails | undefined;
+  public readonly retryAfterSeconds: number | undefined;
 
   public constructor(
     message: string,
     status: number,
     code: string,
     details?: ApiErrorDetails,
+    retryAfterSeconds?: number,
   ) {
     super(message);
     this.name = "ApiClientError";
     this.status = status;
     this.code = code;
     this.details = details;
+    this.retryAfterSeconds = retryAfterSeconds;
   }
 }
 
@@ -39,6 +42,16 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function isErrorResponse(value: unknown): value is ErrorResponse {
   if (!isRecord(value) || value.success !== false || !isRecord(value.error)) return false;
   return typeof value.error.code === "string" && typeof value.error.message === "string";
+}
+
+function parseRetryAfterSeconds(value: string | null): number | undefined {
+  if (!value) return undefined;
+  const seconds = Number(value);
+  if (Number.isFinite(seconds) && seconds >= 0) return Math.ceil(seconds);
+  const timestamp = Date.parse(value);
+  if (Number.isNaN(timestamp)) return undefined;
+  const remaining = Math.ceil((timestamp - Date.now()) / 1000);
+  return remaining >= 0 ? remaining : 0;
 }
 
 export function resolveApiBaseUrl(configuredUrl: string | undefined, origin?: string): string | null {
@@ -117,18 +130,22 @@ export async function request<T>(
   }
 
   if (!response.ok) {
+    const retryAfterSeconds = parseRetryAfterSeconds(response.headers.get("Retry-After"));
     if (isErrorResponse(payload)) {
       throw new ApiClientError(
         payload.error.message,
         response.status,
         payload.error.code,
         payload.error.details,
+        retryAfterSeconds,
       );
     }
     throw new ApiClientError(
       "The API returned an unexpected response.",
       response.status,
       "INVALID_RESPONSE",
+      undefined,
+      retryAfterSeconds,
     );
   }
 

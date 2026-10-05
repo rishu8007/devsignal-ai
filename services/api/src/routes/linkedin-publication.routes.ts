@@ -23,18 +23,19 @@ import {
 export const linkedinPublicationRouter = Router();
 
 linkedinPublicationRouter.use(authenticationMiddleware);
-linkedinPublicationRouter.use(linkedinPublishingRateLimitMiddleware);
 linkedinPublicationRouter.get("/", getLinkedInPublicationHistory);
 linkedinPublicationRouter.post(
   "/preview",
+  linkedinPublishingRateLimitMiddleware,
   validateRequest(linkedinPublicationPreviewSchema),
   previewLinkedInPublication,
 );
-linkedinPublicationRouter.post("/schedule", validateRequest(linkedinPublicationScheduleSchema), scheduleLinkedInPublicationRequest);
-linkedinPublicationRouter.post("/reschedule", validateRequest(linkedinPublicationRescheduleSchema), rescheduleLinkedInPublicationRequest);
-linkedinPublicationRouter.post("/cancel", validateRequest(linkedinPublicationCancelSchema), cancelLinkedInPublicationRequest);
+linkedinPublicationRouter.post("/schedule", linkedinPublishingRateLimitMiddleware, validateRequest(linkedinPublicationScheduleSchema), scheduleLinkedInPublicationRequest);
+linkedinPublicationRouter.post("/reschedule", linkedinPublishingRateLimitMiddleware, validateRequest(linkedinPublicationRescheduleSchema), rescheduleLinkedInPublicationRequest);
+linkedinPublicationRouter.post("/cancel", linkedinPublishingRateLimitMiddleware, validateRequest(linkedinPublicationCancelSchema), cancelLinkedInPublicationRequest);
 linkedinPublicationRouter.post(
   "/confirm",
+  linkedinPublishingRateLimitMiddleware,
   validateRequest(linkedinPublicationConfirmSchema),
   confirmLinkedInPublicationRequest,
 );

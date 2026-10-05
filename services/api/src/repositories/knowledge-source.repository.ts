@@ -222,7 +222,7 @@ export function findKnowledgeSourceForIndexing(
 ): Promise<KnowledgeSourceDocument | null> {
   return KnowledgeSourceModel.findOne({ _id: sourceId, ownerId })
     .select(
-      "title content +github +indexingAttemptId +indexingLeaseExpiresAt +indexedContentVersion " +
+      "title content contentVersion processingStatus +github +indexingAttemptId +indexingLeaseExpiresAt +indexedContentVersion " +
         "+indexedChunkerVersion +indexedEmbeddingModel +indexedDimensions +indexedChunkCount",
     )
     .lean<KnowledgeSourceDocument>()
@@ -235,7 +235,10 @@ export function claimKnowledgeSourceIndexing(
   contentVersion: number,
   attemptId: string,
   leaseExpiresAt: Date,
+  activeEmbeddingModel: string,
+  activeEmbeddingDimensions: number,
 ): Promise<KnowledgeSourceDocument | null> {
+  const now = new Date();
   return KnowledgeSourceModel.findOneAndUpdate(
     {
       _id: sourceId,
@@ -246,10 +249,27 @@ export function claimKnowledgeSourceIndexing(
           processingStatus: { $in: ["pending", "failed"] },
           $or: [
             { indexingLeaseExpiresAt: null },
-            { indexingLeaseExpiresAt: { $lte: new Date() } },
+            { indexingLeaseExpiresAt: { $lte: now } },
           ],
         },
-        { processingStatus: "indexing", indexingLeaseExpiresAt: { $lte: new Date() } },
+        { processingStatus: "indexing", indexingLeaseExpiresAt: { $lte: now } },
+        {
+          processingStatus: "indexed",
+          $and: [
+            {
+              $or: [
+                { indexedEmbeddingModel: { $ne: activeEmbeddingModel } },
+                { indexedDimensions: { $ne: activeEmbeddingDimensions } },
+              ],
+            },
+            {
+              $or: [
+                { indexingLeaseExpiresAt: null },
+                { indexingLeaseExpiresAt: { $lte: now } },
+              ],
+            },
+          ],
+        },
       ],
     },
     {

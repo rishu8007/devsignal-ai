@@ -21,6 +21,7 @@ import { notificationRouter } from "./routes/notification.routes.js";
 import { analyticsRouter } from "./routes/analytics.routes.js";
 import { usageRouter } from "./routes/usage.routes.js";
 import { githubRouter } from "./routes/github.routes.js";
+import { generationReconciliationRouter } from "./routes/generation-reconciliation.routes.js";
 
 export const app = express();
 
@@ -31,6 +32,7 @@ app.use(
   cors({
     origin: env.WEB_ORIGIN,
     credentials: true,
+    exposedHeaders: ["Retry-After"],
   }),
 );
 app.use(express.json({ limit: "1mb" }));
@@ -52,5 +54,6 @@ app.use("/api/v1/publications/linkedin", linkedinPublicationRouter);
 app.use("/api/v1/notifications", notificationRouter);
 app.use("/api/v1/analytics", analyticsRouter);
 app.use("/api/v1/usage", usageRouter);
+app.use("/api/v1/admin/ai-operations", generationReconciliationRouter);
 app.use(notFoundMiddleware);
 app.use(errorMiddleware);

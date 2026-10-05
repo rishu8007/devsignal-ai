@@ -10,9 +10,9 @@ from app.providers.embedding_provider import (
     MAX_EMBEDDING_BATCH_CODE_POINTS,
     MAX_EMBEDDING_BATCH_SIZE,
     MAX_EMBEDDING_TEXT_LENGTH,
-    EmbeddingProviderError,
     OpenAIEmbeddingProvider,
 )
+from app.providers.errors import EmbeddingProviderError
 
 
 @dataclass
@@ -73,6 +73,24 @@ async def test_returns_vectors_in_input_order_and_passes_configuration() -> None
             "input": ["first", "second"],
             "model": "test-embedding",
             "dimensions": EMBEDDING_DIMENSIONS,
+            "encoding_format": "float",
+        }
+    ]
+
+
+@pytest.mark.anyio
+async def test_query_purpose_preserves_openai_embedding_request_shape() -> None:
+    api = FakeEmbeddingsAPI(FakeResponse([FakeEmbedding(index=0, embedding=[0.1, 0.2])]))
+    provider = OpenAIEmbeddingProvider(api, model="test-embedding", dimensions=2)
+
+    result = await provider.embed(["search query"], purpose="query")
+
+    assert result == [[0.1, 0.2]]
+    assert api.calls == [
+        {
+            "input": ["search query"],
+            "model": "test-embedding",
+            "dimensions": 2,
             "encoding_format": "float",
         }
     ]

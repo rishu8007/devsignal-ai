@@ -14,7 +14,8 @@ from app.api.dependencies import require_internal_api_key
 from app.errors import ApplicationError
 from app.main import app
 from app.prompts import SYSTEM_PROMPT
-from app.providers.openai_provider import OpenAIProvider, ProviderError
+from app.providers.errors import ProviderError
+from app.providers.openai_provider import OpenAIProvider
 from app.schemas.generation import (
     GenerationRequest,
     GenerationVariation,
@@ -153,6 +154,67 @@ def test_generation_rejects_invalid_provider_output() -> None:
         client.__exit__(None, None, None)
     assert response.status_code == 502
     assert response.json()["error"]["code"] == "AI_INVALID_RESPONSE"
+
+
+def test_generation_logs_normalization_stage_and_safe_reason(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    output = valid_output()
+    output.variations[0] = GenerationVariation(angle="technical_depth", content=VALID_CONTENT)
+    client = client_with(FakeProvider(output=output))
+    try:
+        with caplog.at_level("INFO", logger="devsignal-ai-service"):
+            response = client.post(
+                "/api/v1/generations",
+                json=request_payload(),
+                headers={
+                    "X-Internal-API-Key": "test-internal-key-that-is-at-least-32-characters",
+                    "X-Correlation-ID": "normalization-check",
+                },
+            )
+    finally:
+        client.__exit__(None, None, None)
+    assert response.status_code == 502
+    assert "stage=variation_normalization" in caplog.text
+    assert "reason=duplicate angle" in caplog.text
+    assert VALID_CONTENT not in caplog.text
+
+
+def test_generation_logs_safe_error_code_with_correlation_id(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    client = client_with(
+        FakeProvider(
+            error=ProviderError(
+                "provider",
+                exception_class="ClientError",
+                stage="generate_content",
+                upstream_status=502,
+                reason="bad_gateway",
+            )
+        )
+    )
+    try:
+        with caplog.at_level("INFO", logger="devsignal-ai-service"):
+            response = client.post(
+                "/api/v1/generations",
+                json=request_payload(),
+                headers={
+                    "X-Internal-API-Key": "test-internal-key-that-is-at-least-32-characters",
+                    "X-Correlation-ID": "operation-123",
+                },
+            )
+    finally:
+        client.__exit__(None, None, None)
+    assert response.status_code == 502
+    assert "correlation_id=operation-123" in caplog.text
+    assert "code=AI_PROVIDER_ERROR" in caplog.text
+    assert "status=502" in caplog.text
+    assert "exception_class=ClientError" in caplog.text
+    assert "stage=generate_content" in caplog.text
+    assert "upstream_status=502" in caplog.text
+    assert "reason=bad_gateway" in caplog.text
+    assert "sensitive" not in caplog.text
 
 
 @pytest.mark.parametrize(

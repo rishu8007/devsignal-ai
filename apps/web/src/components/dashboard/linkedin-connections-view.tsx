@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { ApiClientError } from "@/lib/api/api-client";
 import { connectLinkedIn, disconnectLinkedIn, getLinkedInStatus, requestLinkedInPostingConsent, type LinkedInStatus } from "@/lib/api/linkedin-client";
 import { listLinkedInPublications, type LinkedInPublication } from "@/lib/api/linkedin-publication-client";
@@ -8,16 +9,40 @@ import { listLinkedInPublications, type LinkedInPublication } from "@/lib/api/li
 export function LinkedInConnectionsView({ active, onNavigate }: { active: boolean; onNavigate?: (tab: "drafts" | "calendar") => void }) {
   const [status, setStatus] = useState<LinkedInStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [historyError, setHistoryError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [history, setHistory] = useState<LinkedInPublication[]>([]);
   const [loading, setLoading] = useState(false);
+  const searchParams = useSearchParams();
+  const callbackResult = searchParams.get("linkedin");
+  const callbackMessage = callbackResult === "identity_in_use"
+    ? "This LinkedIn account is already connected to another DevSignal account."
+    : callbackResult === "identity_mismatch"
+      ? "The LinkedIn account changed during authorization. Please try again."
+      : callbackResult === "stale"
+        ? "This LinkedIn authorization expired or was superseded. Please try again."
+        : callbackResult === "denied"
+          ? "LinkedIn authorization was declined."
+          : callbackResult === "error"
+            ? "LinkedIn connection could not be confirmed. Please try again."
+            : null;
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
       const nextStatus = await getLinkedInStatus();
       setStatus(nextStatus);
-      if (nextStatus.publishingEnabled) setHistory(await listLinkedInPublications());
+      setHistoryError(null);
+      if (nextStatus.publishingEnabled) {
+        try {
+          setHistory(await listLinkedInPublications());
+        } catch (cause) {
+          setHistoryError(cause instanceof ApiClientError ? cause.message : "Publication history could not be loaded.");
+          setHistory([]);
+        }
+      } else {
+        setHistory([]);
+      }
       setError(null);
     } catch (cause) {
       setError(cause instanceof ApiClientError ? cause.message : "The connection status could not be loaded.");
@@ -78,7 +103,9 @@ export function LinkedInConnectionsView({ active, onNavigate }: { active: boolea
           <div><h3 id="linkedin-connection-heading" className="text-lg font-semibold text-slate-900">LinkedIn</h3><p className="mt-1 text-sm text-slate-600">Identity and optional posting permission.</p></div>
           {loading ? <span className="text-sm text-slate-500" role="status">Checking connection…</span> : status?.connected ? <span className={`rounded-full px-3 py-1 text-xs font-semibold ${status.status === "connected" ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>{status.status === "connected" ? "Connected" : "Reconnect required"}</span> : status?.status === "not_configured" ? <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">Unavailable</span> : <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">Disconnected</span>}
         </div>
+      {callbackMessage && <p className="mt-4 rounded bg-rose-50 p-3 text-sm text-rose-700" role="alert">{callbackMessage}</p>}
       {error && <p className="mt-4 rounded bg-rose-50 p-3 text-sm text-rose-700" role="alert">{error}</p>}
+      {historyError && <p className="mt-4 rounded bg-amber-50 p-3 text-sm text-amber-800" role="alert">{historyError}</p>}
       {!loading && status?.status === "not_configured" ? (
         <p className="mt-5 rounded bg-slate-50 p-3 text-sm text-slate-600">LinkedIn is unavailable because this environment has not configured the connection integration. No account changes were made.</p>
       ) : status?.connected ? (

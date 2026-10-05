@@ -10,14 +10,15 @@ from app.providers.embedding_provider import (
     EMBEDDING_DIMENSIONS,
     EMBEDDING_MODEL,
     MAX_EMBEDDING_TEXT_LENGTH,
-    EmbeddingProviderError,
 )
+from app.providers.errors import EmbeddingProviderError
+from app.providers.protocol import EmbeddingProvider
 from app.repositories.qdrant_repository import (
     ChunkSearchResult,
     QdrantRepositoryError,
 )
 from app.schemas.common import UsageMetadata
-from app.services.source_indexing import EmbeddingClient, EmbeddingConfiguration
+from app.services.source_indexing import EmbeddingConfiguration
 
 MAX_RETRIEVAL_RESULT_COUNT = 20
 OWNER_ID_PATTERN = re.compile(r"^[0-9a-fA-F]{24}$")
@@ -57,7 +58,7 @@ class RetrievalError(Exception):
 class RetrievalService:
     def __init__(
         self,
-        embedding_provider: EmbeddingClient,
+        embedding_provider: EmbeddingProvider,
         vector_searcher: VectorSearcher,
         embedding_configuration: EmbeddingConfiguration | None = None,
         max_result_count: int = MAX_RETRIEVAL_RESULT_COUNT,
@@ -93,9 +94,12 @@ class RetrievalService:
         _validate_limit(limit, self._max_result_count)
         try:
             if hasattr(self._embedding_provider, "embed_with_usage"):
-                vectors, usage = await self._embedding_provider.embed_with_usage([query])
+                vectors, usage = await self._embedding_provider.embed_with_usage(
+                    [query],
+                    purpose="query",
+                )
             else:
-                vectors = await self._embedding_provider.embed([query])
+                vectors = await self._embedding_provider.embed([query], purpose="query")
                 usage = None
         except EmbeddingProviderError as exception:
             raise RetrievalError(exception.kind) from exception
@@ -158,7 +162,10 @@ def _validate_embedding(
     for value in vector:
         if isinstance(value, bool) or not isinstance(value, (int, float)):
             raise RetrievalError("invalid_embedding")
-        numeric_value = float(value)
+        try:
+            numeric_value = float(value)
+        except OverflowError as exception:
+            raise RetrievalError("invalid_embedding") from exception
         if not math.isfinite(numeric_value):
             raise RetrievalError("invalid_embedding")
         normalized.append(numeric_value)

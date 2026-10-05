@@ -23,6 +23,7 @@ test("UI-only mocked API: connection cards, repository selection, Work filters, 
     if (request.method() === "GET" && path === "/notifications/unread-count") return route.fulfill({ json: { success: true, data: { unread: 0 } } });
     if (request.method() === "GET" && path === "/connections/linkedin/status") return route.fulfill({ json: { success: true, data: { enabled: true, status: "disconnected", connected: false, publishingEnabled: false } } });
     if (request.method() === "GET" && path === "/connections/github/status") return route.fulfill({ json: { success: true, data: { enabled: true, status: "connected", identity: { login: "octocat", githubUserId: "7" }, repositories: [{ ...repository, selected }] , sync: { status: "idle", lastSuccessAt: "2026-01-03T00:00:00.000Z", lastError: null, nextEligibleAt: null } } } });
+    if (request.method() === "GET" && path === "/connections/github/repositories") return route.fulfill({ json: { success: true, data: { repositories: [{ ...repository, selected }] } } });
     if (request.method() === "POST" && path === "/connections/github/connect") return route.fulfill({ json: { success: true, data: { authorizationUrl: "https://github.com/apps/devsignal-test/installations/new" } } });
     if (request.method() === "PUT" && path === "/connections/github/repositories") { selected = false; return route.fulfill({ json: { success: true, data: { repositories: [{ ...repository, selected: false }] } } }); }
     if (request.method() === "GET" && path === "/connections/github/activities") return route.fulfill({ json: { success: true, data: { activities: [{ ...activity, convertedSignalId: converted ? "signal-1" : null }] } } });
@@ -41,7 +42,9 @@ test("UI-only mocked API: connection cards, repository selection, Work filters, 
   await page.goto("/dashboard");
   await page.getByRole("button", { name: "Connections" }).click();
   await page.getByRole("button", { name: "Save repositories" }).click();
-  await expect.poll(() => requests.filter((request) => request.path === "/connections/github/repositories")).toHaveLength(1);
+  await expect.poll(() => requests.filter((request) => request.method === "PUT" && request.path === "/connections/github/repositories")).toHaveLength(1);
+  const repositorySaves = requests.filter((request) => request.method === "PUT" && request.path === "/connections/github/repositories");
+  expect(JSON.parse(repositorySaves[0]?.body ?? "{}")).toEqual({ repositoryIds: [42] });
   await page.getByRole("button", { name: "Open work activity" }).click();
   await expect(page.getByRole("heading", { name: "GitHub Work" })).toBeVisible();
   await expect(page.getByText("Improve retrieval")).toBeVisible();

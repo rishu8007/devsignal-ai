@@ -29,6 +29,14 @@ services:
     volumes:
       - devsignal_qdrant_data:/qdrant/storage
 
+  mailpit:
+    profiles: ["mailpit"]
+    image: axllent/mailpit:v1.27.0
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${MAILPIT_SMTP_PORT:-1025}:1025"
+      - "127.0.0.1:${MAILPIT_UI_PORT:-8025}:8025"
+
 volumes:
   devsignal_mongo_data:
   devsignal_qdrant_data:

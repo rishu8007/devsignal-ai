@@ -25,17 +25,6 @@ const environmentSchema = z.object({
     .min(1)
     .regex(/^[\w!#$%&'*+\-.^`|~]+$/)
     .default("devsignal_access_token"),
-  SMTP_HOST: z.string().trim().min(1).optional(),
-  SMTP_PORT: z.coerce.number().int().min(1).max(65535).default(587),
-  SMTP_SECURE: z.enum(["true", "false"]).default("false").transform((value) => value === "true"),
-  SMTP_USERNAME: z.string().optional(),
-  SMTP_PASSWORD: z.string().optional(),
-  SMTP_FROM: z.string().trim().min(1).refine((value) => {
-    const mailbox = /^(.*?)<([^<>]+)>$/.exec(value);
-    const displayName = mailbox?.[1]?.trim();
-    const address = mailbox?.[2]?.trim() ?? value;
-    return z.email().safeParse(address).success && (!mailbox || Boolean(displayName));
-  }, "SMTP_FROM must be an email address or a named email address").optional(),
   AI_SERVICE_URL: z
     .string()
     .url()
@@ -110,10 +99,6 @@ if (!parsedEnvironment.success) {
 }
 
 export const env = parsedEnvironment.data;
-
-if (Boolean(env.SMTP_USERNAME) !== Boolean(env.SMTP_PASSWORD)) {
-  throw new Error("SMTP_USERNAME and SMTP_PASSWORD must be configured together.");
-}
 
 if (env.AI_MODEL_PRICING_JSON) {
   const pricing = (() => {

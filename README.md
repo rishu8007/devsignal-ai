@@ -502,17 +502,6 @@ docker compose -f docker-compose.yml -f docker-compose.app.yml --env-file .env.d
 docker compose -f docker-compose.yml -f docker-compose.app.yml --env-file .env.docker --profile app ps
 ```
 
-For local reset-email testing, set the SMTP host to `mailpit`, port to `1025`,
-TLS to `false`, leave SMTP credentials blank, and configure a sender address.
-Start the app with Mailpit's optional profile; its UI and SMTP listener bind
-only to localhost:
-
-```powershell
-docker compose -f docker-compose.yml -f docker-compose.app.yml --env-file .env.docker --profile app --profile mailpit up -d
-```
-
-Open Mailpit at `http://127.0.0.1:8025`.
-
 The browser uses `NEXT_PUBLIC_API_BASE_URL` baked into the web image at build
 time and must use a browser-reachable URL such as
 `http://localhost:4000/api/v1`; container DNS names such as `http://api:4000`
